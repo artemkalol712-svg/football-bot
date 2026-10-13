@@ -1729,7 +1729,8 @@ async def close_work_cb(cb: CallbackQuery, state: FSMContext):
     except: pass
         await state.clear(); await cb.answer()
 
-def _pdt(v):    if not v: return None
+def _pdt(v):
+    if not v: return None
     try: return datetime.fromisoformat(str(v))
     except: return None
 
