@@ -2909,5 +2909,15 @@ async def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-  
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="debug")
+
+@dp.message()
+async def debug_handler(m: Message):
+    print(f"📩 MSG: {m.text} | from {m.from_user.id}", flush=True)
+
+@dp.errors()
+async def debug_errors(event):
+    print(f"❌ ERROR: {event.exception}", flush=True)
+    import traceback
+    traceback.print_exception(type(event.exception), event.exception, event.exception.__traceback__)
+    return True
