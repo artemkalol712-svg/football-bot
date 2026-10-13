@@ -283,7 +283,7 @@ class PMAddState(StatesGroup):
     waiting_price = State()
 class TopPhotoState(StatesGroup):
     waiting_balance = State(); waiting_ref = State()
-
+@dp.message(Command("start"))
 async def cmd_start(m: Message, state: FSMContext):
     uid = m.from_user.id
     await update_username(uid, m.from_user.username)
