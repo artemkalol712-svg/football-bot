@@ -1727,9 +1727,9 @@ async def reb_ans(m: Message, state: FSMContext):
 async def close_work_cb(cb: CallbackQuery, state: FSMContext):
     try: await cb.message.delete()
     except: pass
-    await state.clear(); await cb.answer()
-  def _pdt(v):
-    if not v: return None
+        await state.clear(); await cb.answer()
+
+def _pdt(v):    if not v: return None
     try: return datetime.fromisoformat(str(v))
     except: return None
 
