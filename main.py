@@ -30,7 +30,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://example.onrender.com")
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "6caa83b5d7af4e5ca1a3949b244bd68b")
 FOOTBALL_BASE = "https://api.football-data.org/v4"
 DB_PATH = os.getenv("DB_PATH", "/data/roulette_bot.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+try:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+except (PermissionError, OSError):
+    DB_PATH = "/tmp/roulette_bot.db"
+    os.makedirs("/tmp", exist_ok=True)
 
 CHARACTER_IMAGE_URL = "https://images.meme-arsenal.com/1b33706ef743ada8f45708d260f40436.jpg"
 MAP_IMAGE_URL = "https://i.postimg.cc/CMDXYrB0/IMG-20240916-112931-570.jpg"
