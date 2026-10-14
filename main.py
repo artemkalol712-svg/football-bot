@@ -2908,9 +2908,12 @@ async def on_startup():
 async def _run_bot():
     try:
         print("🎯 Запускаю polling...", flush=True)
-        await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+        me = await bot.get_me()
+        print(f"✅ Бот подключён: @{me.username} (id={me.id})", flush=True)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     except Exception as e:
-        print(f"❌ POLLING CRASH: {e}", flush=True)
+        print(f"❌ POLLING CRASH: {type(e).__name__}: {e}", flush=True)
         import traceback
         traceback.print_exc()
 
