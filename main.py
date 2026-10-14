@@ -3062,28 +3062,14 @@ async def adm_cmd(m: Message):
 ⚽ /состав [команда] — посмотреть состав
 💾 /бэкап""", parse_mode=ParseMode.HTML)
 
-    # ========= ФУТБОЛ (API-Football) =========
 COMPETITIONS_FOOTBALL = {
-    "39":"🏴 Premier League",
-    "140":"🇪🇸 La Liga",
-    "78":"🇩🇪 Bundesliga",
-    "135":"🇮🇹 Serie A",
-    "61":"🇫🇷 Ligue 1",
-    "235":"🇷🇺 РПЛ",
-    "203":"🇹🇷 Süper Lig",
-    "2":"🏆 Champions League",
-    "3":"🏆 Europa League",
-    "848":"🏆 Conference League",
-    "88":"🇳🇱 Eredivisie",
-    "94":"🇵🇹 Primeira Liga",
-    "144":"🇧🇪 Jupiler Pro League",
-    "71":"🇧🇷 Brasileirão",
-    "128":"🇦🇷 Liga Profesional",
-    "253":"🇺🇸 MLS",
-    "292":"🇸🇦 Saudi Pro League",
-}
+    "39":"🏴 Premier League","140":"🇪🇸 La Liga","78":"🇩🇪 Bundesliga",
+    "135":"🇮🇹 Serie A","61":"🇫🇷 Ligue 1","235":"🇷🇺 РПЛ","203":"🇹🇷 Süper Lig",
+    "2":"🏆 Champions League","3":"🏆 Europa League","848":"🏆 Conference League",
+    "88":"🇳🇱 Eredivisie","94":"🇵🇹 Primeira Liga","144":"🇧🇪 Jupiler Pro League",
+    "71":"🇧🇷 Brasileirão","128":"🇦🇷 Liga Profesional","253":"🇺🇸 MLS","292":"🇸🇦 Saudi Pro League"}
 
-_fb_cache = {}; FB_TTL = 90
+_fb_cache = {}; FB_TTL = 60
 
 async def fb_get(path, params=None):
     if not API_FOOTBALL_KEY:
@@ -3094,8 +3080,7 @@ async def fb_get(path, params=None):
         if (now-ts).total_seconds() < FB_TTL: return data
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(f"{API_FOOTBALL_BASE}{path}",
-            headers={"x-apisports-key": API_FOOTBALL_KEY},
-            params=params or {})
+            headers={"x-apisports-key": API_FOOTBALL_KEY}, params=params or {})
         if r.status_code == 429: raise Exception("Лимит API (100/день)")
         if r.status_code == 403: raise Exception("Доступ запрещён")
         if r.status_code == 404: raise Exception("Не найдено")
@@ -3110,64 +3095,69 @@ async def fb_get(path, params=None):
     _fb_cache[key] = (data, now); return data
 
 async def fb_fixtures_by_date(league_id, date_str):
-    return await fb_get("/fixtures", {"league": league_id, "season": 2026, "date": date_str})
+    return await fb_get("/fixtures", {"league": league_id, "date": date_str})
+
+async def fb_fixtures_next(league_id, next_n=15):
+    return await fb_get("/fixtures", {"league": league_id, "next": next_n})
 
 async def fb_matches(comp):
-    """Ближайшие матчи: сегодня + завтра, если пусто — 7 дней вперёд."""
-    today = datetime.utcnow().date()
     matches = []
-    # сегодня и завтра
-    for d in [today, today + timedelta(days=1)]:
+    today = datetime.utcnow().date()
+    # 1. пробуем сегодня + завтра + послезавтра
+    for off in [0, 1, 2]:
+        d = today + timedelta(days=off)
         try:
             data = await fb_fixtures_by_date(comp, d.isoformat())
-            matches.extend(data.get("response", []))
+            got = data.get("response", [])
+            print(f"[FB] {comp} {d}: {len(got)}", flush=True)
+            matches.extend(got)
         except Exception as e:
-            print(f"fb fetch {comp} {d}: {e}")
-    # если нет — 7 дней
+            print(f"[FB] {comp} {d} ERR: {e}", flush=True)
+    # 2. если пусто — берём ближайшие 15 через параметр next
     if not matches:
-        for dd in range(2, 10):
-            day = today + timedelta(days=dd)
+        try:
+            data = await fb_fixtures_next(comp, 15)
+            got = data.get("response", [])
+            print(f"[FB] {comp} next15: {len(got)}", flush=True)
+            matches.extend(got)
+        except Exception as e:
+            print(f"[FB] {comp} next15 ERR: {e}", flush=True)
+    # 3. если всё ещё пусто — идём на 14 дней вперёд
+    if not matches:
+        for off in range(3, 15):
+            d = today + timedelta(days=off)
             try:
-                data = await fb_fixtures_by_date(comp, day.isoformat())
-                matches.extend(data.get("response", []))
+                data = await fb_fixtures_by_date(comp, d.isoformat())
+                got = data.get("response", [])
+                print(f"[FB] {comp} {d}: {len(got)}", flush=True)
+                matches.extend(got)
                 if len(matches) >= 15: break
-            except Exception as e:
-                print(f"fb fetch {comp} {day}: {e}")
+            except: continue
     return matches[:40]
 
 async def fb_fixture(fid):
     return await fb_get("/fixtures", {"id": fid})
 
 async def fb_standings(comp):
-    try:
-        return await fb_get("/standings", {"league": comp, "season": 2026})
+    try: return await fb_get("/standings", {"league": comp})
     except: return {"response": []}
 
-def calc_odds_from_standings(home_id, away_id, standings_data):
-    """Считает коэффициенты по позициям команд в таблице."""
+def calc_odds(home_id, away_id, st):
     def rk(tid):
         try:
-            for block in standings_data.get("response", []):
-                for grp in block.get("league", {}).get("standings", []):
+            for blk in st.get("response", []):
+                for grp in blk.get("league", {}).get("standings", []):
                     for row in grp:
-                        if row["team"]["id"] == tid:
-                            return row["rank"]
+                        if row["team"]["id"] == tid: return row["rank"]
         except: pass
         return 10
-    hp = rk(home_id); ap = rk(away_id)
-    diff = (ap - hp) / 10.0
-    h = max(0.10, min(0.75, 0.40 + 0.25 * diff))
-    a = max(0.10, min(0.75, 0.40 - 0.25 * diff))
-    d = max(0.15, 1 - h - a)
-    tot = h + a + d; h /= tot; a /= tot; d /= tot
-    mg = 1.10
-    return {
-        "home": round(1/h*mg, 2), "draw": round(1/d*mg, 2), "away": round(1/a*mg, 2),
-        "favorite": "home" if h > a else "away",
-        "home_chance": round(h*100, 1),
-        "draw_chance": round(d*100, 1),
-        "away_chance": round(a*100, 1)
-    }
+    hp = rk(home_id); ap = rk(away_id); diff = (ap-hp)/10.0
+    h = max(0.10, min(0.75, 0.40+0.25*diff))
+    a = max(0.10, min(0.75, 0.40-0.25*diff))
+    d = max(0.15, 1-h-a); tot = h+a+d; h/=tot; a/=tot; d/=tot; mg = 1.10
+    return {"home":round(1/h*mg,2),"draw":round(1/d*mg,2),"away":round(1/a*mg,2),
+        "favorite":"home" if h>a else "away","home_chance":round(h*100,1),
+        "draw_chance":round(d*100,1),"away_chance":round(a*100,1)}
 
 def verify_init(init):
     if not init: raise HTTPException(401, "no initData")
@@ -3189,31 +3179,23 @@ async def api_matches(competition: str = "39"):
     res = []
     for m in ms:
         try:
-            fixture = m["fixture"]; teams = m["teams"]; goals = m.get("goals", {}); league = m.get("league", {})
-            status_short = fixture.get("status", {}).get("short", "NS")
-            status_map = {
-                "NS": "SCHEDULED", "TBD": "SCHEDULED", "1H": "IN_PLAY", "HT": "PAUSED",
-                "2H": "IN_PLAY", "ET": "IN_PLAY", "P": "IN_PLAY", "FT": "FINISHED",
-                "AET": "FINISHED", "PEN": "FINISHED", "SUSP": "PAUSED", "INT": "PAUSED",
-                "PST": "POSTPONED", "CANC": "CANCELLED", "ABD": "CANCELLED",
-                "AWD": "FINISHED", "WO": "FINISHED", "LIVE": "IN_PLAY"
-            }
-            status = status_map.get(status_short, "SCHEDULED")
-            minute = fixture.get("status", {}).get("elapsed")
-            odds = calc_odds_from_standings(teams["home"]["id"], teams["away"]["id"], st)
-            res.append({
-                "id": fixture["id"],
-                "competition": league.get("name", ""),
-                "utcDate": fixture["date"],
-                "status": status,
-                "minute": minute,
-                "home": {"id": teams["home"]["id"], "name": teams["home"]["name"], "crest": teams["home"].get("logo", "")},
-                "away": {"id": teams["away"]["id"], "name": teams["away"]["name"], "crest": teams["away"].get("logo", "")},
-                "score": {"home": goals.get("home"), "away": goals.get("away")},
-                "odds": odds
-            })
+            fx = m["fixture"]; tm = m["teams"]; gl = m.get("goals", {}); lg = m.get("league", {})
+            ss = fx.get("status", {}).get("short", "NS")
+            smap = {"NS":"SCHEDULED","TBD":"SCHEDULED","1H":"IN_PLAY","HT":"PAUSED","2H":"IN_PLAY",
+                "ET":"IN_PLAY","P":"IN_PLAY","FT":"FINISHED","AET":"FINISHED","PEN":"FINISHED",
+                "SUSP":"PAUSED","INT":"PAUSED","PST":"POSTPONED","CANC":"CANCELLED",
+                "ABD":"CANCELLED","AWD":"FINISHED","WO":"FINISHED","LIVE":"IN_PLAY"}
+            status = smap.get(ss, "SCHEDULED")
+            odds = calc_odds(tm["home"]["id"], tm["away"]["id"], st)
+            res.append({"id": fx["id"], "competition": lg.get("name",""),
+                "utcDate": fx["date"], "status": status,
+                "minute": fx.get("status",{}).get("elapsed"),
+                "home": {"id": tm["home"]["id"], "name": tm["home"]["name"], "crest": tm["home"].get("logo","")},
+                "away": {"id": tm["away"]["id"], "name": tm["away"]["name"], "crest": tm["away"].get("logo","")},
+                "score": {"home": gl.get("home"), "away": gl.get("away")},
+                "odds": odds})
         except Exception as e:
-            print(f"parse match: {e}"); continue
+            print(f"parse: {e}"); continue
     return {"matches": res}
 
 @app.get("/api/match/{mid}")
@@ -3232,25 +3214,16 @@ async def api_lineup(mid: int):
         d = await fb_get("/fixtures/lineups", {"fixture": mid})
         resp = d.get("response", [])
         result = []
-        for team_data in resp:
-            team = team_data.get("team", {})
-            formation = team_data.get("formation", "")
-            startXI = team_data.get("startXI", [])
-            players = []
-            for p in startXI:
+        for td in resp:
+            team = td.get("team", {})
+            start = td.get("startXI", [])
+            pls = []
+            for p in start:
                 pl = p.get("player", {})
-                players.append({
-                    "name": pl.get("name", "?"),
-                    "number": pl.get("number"),
-                    "pos": pl.get("pos", ""),
-                    "grid": pl.get("grid", "")
-                })
-            result.append({
-                "team": team.get("name", ""),
-                "logo": team.get("logo", ""),
-                "formation": formation,
-                "players": players
-            })
+                pls.append({"name": pl.get("name","?"), "number": pl.get("number"),
+                            "pos": pl.get("pos",""), "grid": pl.get("grid","")})
+            result.append({"team": team.get("name",""), "logo": team.get("logo",""),
+                           "formation": td.get("formation",""), "players": pls})
         return {"lineups": result}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -3266,39 +3239,29 @@ async def api_balance(initData: str):
 @app.post("/api/bet")
 async def api_bet(req: Request):
     d = await req.json(); uid = verify_init(d.get("initData"))
-    mid = int(d.get("matchId")); comp = d.get("competition", "")
-    pick = d.get("pick"); amount = int(d.get("amount", 0)); coef = float(d.get("coefficient", 1.0))
-    if pick not in ("home", "draw", "away"):
-        return JSONResponse({"ok": False, "error": "Неверный выбор"}, status_code=400)
+    mid = int(d.get("matchId")); comp = d.get("competition","")
+    pick = d.get("pick"); amount = int(d.get("amount",0)); coef = float(d.get("coefficient",1.0))
+    if pick not in ("home","draw","away"):
+        return JSONResponse({"ok":False,"error":"Неверный выбор"}, status_code=400)
     if amount < 100_000:
-        return JSONResponse({"ok": False, "error": "Минимум 100.000"}, status_code=400)
+        return JSONResponse({"ok":False,"error":"Минимум 100.000"}, status_code=400)
     try:
-        fx = await fb_fixture(mid)
-        resp = fx.get("response", [])
+        fx = await fb_fixture(mid); resp = fx.get("response", [])
         if resp:
-            t = resp[0]["teams"]
-            h = t["home"]["name"]; a = t["away"]["name"]
+            t = resp[0]["teams"]; h = t["home"]["name"]; a = t["away"]["name"]
             st = resp[0]["fixture"]["status"]["short"]
-            if st not in ("NS", "TBD"):
-                return JSONResponse({"ok": False, "error": "Ставки закрыты"}, status_code=400)
-        else:
-            h, a = "?", "?"
-    except:
-        h, a = "?", "?"
+            if st not in ("NS","TBD"):
+                return JSONResponse({"ok":False,"error":"Ставки закрыты"}, status_code=400)
+        else: h, a = "?","?"
+    except: h, a = "?","?"
     conn = get_db_connection(); c = conn.cursor()
-    # ФИКС: 1 ставка на матч
     c.execute("SELECT 1 FROM football_bets WHERE user_id = ? AND fixture_id = ?", (uid, mid))
     if c.fetchone():
-        conn.close()
-        return JSONResponse({"ok": False, "error": "Вы уже ставили на этот матч"}, status_code=400)
+        conn.close(); return JSONResponse({"ok":False,"error":"Вы уже ставили на этот матч"}, status_code=400)
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     r = c.fetchone()
-    if not r:
-        conn.close()
-        return JSONResponse({"ok": False, "error": "Сначала /start"}, status_code=400)
-    if r[0] < amount:
-        conn.close()
-        return JSONResponse({"ok": False, "error": "Недостаточно средств"}, status_code=400)
+    if not r: conn.close(); return JSONResponse({"ok":False,"error":"Сначала /start"}, status_code=400)
+    if r[0] < amount: conn.close(); return JSONResponse({"ok":False,"error":"Недостаточно"}, status_code=400)
     c.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, uid))
     c.execute("INSERT INTO football_bets (user_id,fixture_id,competition,home_team,away_team,pick,amount,coefficient,placed_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (uid, mid, comp, h, a, pick, amount, coef, datetime.now().isoformat()))
@@ -3306,7 +3269,7 @@ async def api_bet(req: Request):
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     nb = c.fetchone()[0]; conn.close()
     lbl = "П1" if pick == "home" else "Х" if pick == "draw" else "П2"
-    return {"ok": True, "message": f"✅ Ставка {amount:,}₽ на {lbl}".replace(",", "."), "balance": nb}
+    return {"ok":True, "message":f"✅ Ставка {amount:,}₽ на {lbl}".replace(",","."), "balance":nb}
 
 @app.get("/api/my_bets")
 async def api_bets(initData: str):
@@ -3314,8 +3277,8 @@ async def api_bets(initData: str):
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT fixture_id,home_team,away_team,pick,amount,coefficient,status,payout FROM football_bets WHERE user_id = ? ORDER BY id DESC LIMIT 50", (uid,))
     rs = c.fetchall(); conn.close()
-    return {"bets": [{"fixture_id": r[0], "home": r[1], "away": r[2], "pick": r[3],
-                      "amount": r[4], "coefficient": r[5], "status": r[6], "payout": r[7]} for r in rs]}
+    return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],
+                     "coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
 
 FOOTBALL_HTML = r"""<!DOCTYPE html>
 <html lang="ru">
@@ -3392,7 +3355,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 <body>
 <div class="header">
 <div class="header-top">
-<img class="bot-avatar" src="https://images.meme-arsenal.com/1b33706ef743ada8f45708d260f40436.jpg" alt="Bot">
+<img class="bot-avatar" src="https://images.meme-arsenal.com/1b33706ef743ada8f45708d260f40436.jpg">
 <div class="logo">⚽ Football Чел</div>
 <div class="balance-pill" id="balance">₽...</div>
 </div>
@@ -3431,9 +3394,9 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 </div>
 <script>
 const tg = window.Telegram.WebApp; tg.expand(); tg.ready();
-const initData = tg.initData;
+const initData = tg.initData || "";
 let currentComp = "39", currentTab = "matches", currentMatch = null, currentPick = null, currentCoef = 0, balance = 0;
-function fmtBalance(n){return "₽"+n.toLocaleString("ru-RU").replace(/,/g,".");}
+function fmtBalance(n){return "₽"+Number(n).toLocaleString("ru-RU").replace(/,/g,".");}
 function toast(msg,err){const t=document.getElementById("toast");t.textContent=msg;t.className="toast show"+(err?" error":"");setTimeout(()=>t.className="toast",2500);}
 function fmtTime(iso){try{return new Date(iso).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});}catch(e){return "--:--";}}
 function fmtDate(iso){try{const d=new Date(iso),t=new Date(),tm=new Date(t);tm.setDate(t.getDate()+1);if(d.toDateString()===t.toDateString())return"Сегодня";if(d.toDateString()===tm.toDateString())return"Завтра";return d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});}catch(e){return"";}}
@@ -3442,13 +3405,14 @@ function isFinished(m){return m.status==="FINISHED";}
 function isScheduled(m){return ["SCHEDULED","TIMED"].includes(m.status);}
 function canBet(m){return isScheduled(m);}
 function statusLabel(m){
-  if(isLive(m))return`<span class="status-live">🔴 LIVE${m.minute?" "+m.minute+"'":""}</span>`;
+  if(isLive(m))return'<span class="status-live">🔴 LIVE'+(m.minute?" "+m.minute+"'":"")+'</span>';
   if(isFinished(m))return'<span style="color:var(--text2)">✓ Завершён</span>';
-  return`<span class="status-sched">${fmtDate(m.utcDate)} · ${fmtTime(m.utcDate)}</span>`;
+  return'<span class="status-sched">'+fmtDate(m.utcDate)+' · '+fmtTime(m.utcDate)+'</span>';
 }
 async function loadBalance(){
+  if(!initData){document.getElementById("balance").textContent="no initData";return;}
   try{
-    const r=await fetch(`/api/my_balance?initData=${encodeURIComponent(initData)}`);
+    const r=await fetch("/api/my_balance?initData="+encodeURIComponent(initData));
     const d=await r.json();
     if(r.status!==200){document.getElementById("balance").textContent="ERR";return;}
     balance=d.balance||0;
@@ -3470,28 +3434,28 @@ async function loadComps(){
 async function loadMatches(){
   const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';
   try{
-    const r=await fetch(`/api/matches?competition=${currentComp}`);const d=await r.json();
-    if(d.error){el.innerHTML=`<div class="error">${d.error}</div>`;return;}
+    const r=await fetch("/api/matches?competition="+currentComp);const d=await r.json();
+    if(d.error){el.innerHTML='<div class="error">'+d.error+'</div>';return;}
     if(!d.matches||!d.matches.length){el.innerHTML='<div class="empty"><div class="empty-icon">⚽</div>Нет матчей</div>';return;}
     el.innerHTML="";d.matches.forEach(m=>el.appendChild(renderMatch(m)));
-  }catch(e){el.innerHTML=`<div class="error">${e.message}</div>`;}
+  }catch(e){el.innerHTML='<div class="error">'+e.message+'</div>';}
 }
 function renderMatch(m){
   const c=document.createElement("div");c.className="match";const o=m.odds;
   const fh=o.favorite==="home",fa=o.favorite==="away";
   const hs=m.score?.home,as_=m.score?.away;
   const ss=(isLive(m)||isFinished(m))&&hs!==null&&as_!==null;const lk=!canBet(m);
-  c.innerHTML=`<div class="match-top"><span>${m.competition||""}</span>${statusLabel(m)}</div>
-<div class="teams">
-<div class="team"><div class="team-logo-wrap"><img src="${m.home.crest}" onerror="this.style.display='none'"></div><div class="team-name">${m.home.name}</div></div>
-<div><div class="score ${ss?'':'vs'}">${ss?hs+":"+as_:"VS"}</div>${m.minute&&isLive(m)?`<div style="text-align:center;color:var(--red);font-size:10px;font-weight:700">${m.minute}'</div>`:""}</div>
-<div class="team"><div class="team-logo-wrap"><img src="${m.away.crest}" onerror="this.style.display='none'"></div><div class="team-name">${m.away.name}</div></div>
-</div>
-<div class="odds">
-<button class="${fh?'fav':''}" data-p="home" ${lk?'disabled':''}><span class="odds-label-pick">Победа 1</span><span class="odds-coef">${o.home.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.home_chance}%</span>`}</button>
-<button data-p="draw" ${lk?'disabled':''}><span class="odds-label-pick">Ничья</span><span class="odds-coef">${o.draw.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.draw_chance}%</span>`}</button>
-<button class="${fa?'fav':''}" data-p="away" ${lk?'disabled':''}><span class="odds-label-pick">Победа 2</span><span class="odds-coef">${o.away.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.away_chance}%</span>`}</button>
-</div>`;
+  c.innerHTML='<div class="match-top"><span>'+(m.competition||"")+'</span>'+statusLabel(m)+'</div>'+
+'<div class="teams">'+
+'<div class="team"><div class="team-logo-wrap"><img src="'+m.home.crest+'" onerror="this.style.display=\'none\'"></div><div class="team-name">'+m.home.name+'</div></div>'+
+'<div><div class="score '+(ss?"":"vs")+'">'+(ss?hs+":"+as_:"VS")+'</div>'+(m.minute&&isLive(m)?'<div style="text-align:center;color:var(--red);font-size:10px;font-weight:700">'+m.minute+"'</div>":"")+'</div>'+
+'<div class="team"><div class="team-logo-wrap"><img src="'+m.away.crest+'" onerror="this.style.display=\'none\'"></div><div class="team-name">'+m.away.name+'</div></div>'+
+'</div>'+
+'<div class="odds">'+
+'<button class="'+(fh?"fav":"")+'" data-p="home" '+(lk?"disabled":"")+'><span class="odds-label-pick">Победа 1</span><span class="odds-coef">'+o.home.toFixed(2)+'</span>'+(lk?"":'<span class="odds-chance">'+o.home_chance+'%</span>')+'</button>'+
+'<button data-p="draw" '+(lk?"disabled":"")+'><span class="odds-label-pick">Ничья</span><span class="odds-coef">'+o.draw.toFixed(2)+'</span>'+(lk?"":'<span class="odds-chance">'+o.draw_chance+'%</span>')+'</button>'+
+'<button class="'+(fa?"fav":"")+'" data-p="away" '+(lk?"disabled":"")+'><span class="odds-label-pick">Победа 2</span><span class="odds-coef">'+o.away.toFixed(2)+'</span>'+(lk?"":'<span class="odds-chance">'+o.away_chance+'%</span>')+'</button>'+
+'</div>';
   c.onclick=(e)=>{if(e.target.closest(".odds button"))return;openDetail(m.id);};
   c.querySelectorAll(".odds button").forEach(b=>{if(b.disabled)return;b.onclick=(e)=>{e.stopPropagation();openBet(m,b.dataset.p,o[b.dataset.p]);};});
   return c;
@@ -3501,44 +3465,43 @@ async function openDetail(mid){
   document.getElementById("detailContent").innerHTML="";
   document.getElementById("detailModal").classList.add("show");
   try{
-    const r=await fetch(`/api/match/${mid}`);const m=await r.json();
-    if(m.error){document.getElementById("detailContent").innerHTML=`<div class="error">${m.error}</div>`;return;}
-    const fixture=m.fixture||{},teams=m.teams||{},goals=m.goals||{},league=m.league||{};
-    const hn=teams.home?.name||"",an=teams.away?.name||"";
-    const hlogo=teams.home?.logo||"",alogo=teams.away?.logo||"";
-    const hs=goals.home,as_=goals.away;
-    const st=fixture.status?.short||"NS";
+    const r=await fetch("/api/match/"+mid);const m=await r.json();
+    if(m.error){document.getElementById("detailContent").innerHTML='<div class="error">'+m.error+'</div>';return;}
+    const fx=m.fixture||{},tm=m.teams||{},gl=m.goals||{},lg=m.league||{};
+    const hn=tm.home?.name||"",an=tm.away?.name||"";
+    const hl=tm.home?.logo||"",al=tm.away?.logo||"";
+    const hs=gl.home,as_=gl.away;
+    const st=fx.status?.short||"NS";
     const ss=(st==="FT"||st==="1H"||st==="2H"||st==="HT")&&hs!==null&&as_!==null;
     let lineupHtml="";
     try{
-      const lr=await fetch(`/api/lineup/${mid}`);const ld=await lr.json();
+      const lr=await fetch("/api/lineup/"+mid);const ld=await lr.json();
       if(ld.lineups && ld.lineups.length>=1){
         lineupHtml='<div style="margin-top:14px;background:var(--card2);border-radius:12px;padding:12px;font-size:12px"><div style="font-weight:700;margin-bottom:8px">📋 Составы</div>';
-        for(const tm of ld.lineups){
-          lineupHtml+=`<div style="margin-bottom:10px"><b>${tm.team}</b> (${tm.formation||"?"})<br>`;
-          lineupHtml+=tm.players.map(p=>`${p.number||""} ${p.name}`).join(" • ");
+        for(const tm2 of ld.lineups){
+          lineupHtml+='<div style="margin-bottom:10px"><b>'+tm2.team+'</b> ('+(tm2.formation||"?")+')<br>';
+          lineupHtml+=tm2.players.map(p=>(p.number||"")+" "+p.name).join(" • ");
           lineupHtml+='</div>';
         }
         lineupHtml+='</div>';
       }
     }catch(e){}
-    let html=`<div style="text-align:center;margin-bottom:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${league.name||""}</div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px">
-        <div style="text-align:center;flex:1"><img src="${hlogo}" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">${hn}</div></div>
-        <div style="font-size:24px;font-weight:800">${ss?hs+":"+as_:"VS"}</div>
-        <div style="text-align:center;flex:1"><img src="${alogo}" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">${an}</div></div>
-      </div>
-      <div style="font-size:11px;color:var(--text2)">${st==="1H"||st==="2H"||st==="HT"?'🔴 LIVE':st==="FT"?'✓ Завершён':fmtDate(fixture.date)+" "+fmtTime(fixture.date)}</div>
-    </div>
-    <div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px">
-      <div>Стадион: <b>${fixture.venue?.name||"—"}</b></div>
-      <div>Город: <b>${fixture.venue?.city||"—"}</b></div>
-    </div>
-    ${lineupHtml}`;
+    let html='<div style="text-align:center;margin-bottom:16px">'+
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">'+(lg.name||"")+'</div>'+
+      '<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px">'+
+        '<div style="text-align:center;flex:1"><img src="'+hl+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+hn+'</div></div>'+
+        '<div style="font-size:24px;font-weight:800">'+(ss?hs+":"+as_:"VS")+'</div>'+
+        '<div style="text-align:center;flex:1"><img src="'+al+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+an+'</div></div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--text2)">'+(st==="1H"||st==="2H"||st==="HT"?'🔴 LIVE':st==="FT"?'✓ Завершён':fmtDate(fx.date)+" "+fmtTime(fx.date))+'</div>'+
+    '</div>'+
+    '<div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px">'+
+      '<div>Стадион: <b>'+(fx.venue?.name||"—")+'</b></div>'+
+      '<div>Город: <b>'+(fx.venue?.city||"—")+'</b></div>'+
+    '</div>'+lineupHtml;
     document.getElementById("detailTitle").textContent="Матч #"+mid;
     document.getElementById("detailContent").innerHTML=html;
-  }catch(e){document.getElementById("detailContent").innerHTML=`<div class="error">${e.message}</div>`;}
+  }catch(e){document.getElementById("detailContent").innerHTML='<div class="error">'+e.message+'</div>';}
 }
 function closeDetail(){document.getElementById("detailModal").classList.remove("show");}
 function openBet(match,pick,coef){
@@ -3546,11 +3509,10 @@ function openBet(match,pick,coef){
   currentMatch=match;currentPick=pick;currentCoef=coef;
   const lbl=pick==="home"?"Победа 1":pick==="draw"?"Ничья":"Победа 2";
   const tn=pick==="home"?match.home.name:pick==="draw"?"Ничья":match.away.name;
-  document.getElementById("modalTitle").textContent=`${lbl} · ${tn}`;
-  document.getElementById("modalInfo").innerHTML=`${match.home.name} — ${match.away.name}<br>Коэф: <b>x${coef.toFixed(2)}</b><br>Баланс: <b>${fmtBalance(balance)}</b>`;
+  document.getElementById("modalTitle").textContent=lbl+" · "+tn;
+  document.getElementById("modalInfo").innerHTML=match.home.name+" — "+match.away.name+"<br>Коэф: <b>x"+coef.toFixed(2)+"</b><br>Баланс: <b>"+fmtBalance(balance)+"</b>";
   document.getElementById("betAmount").value="1000000";
-  updatePay();
-  document.getElementById("betModal").classList.add("show");
+  updatePay();document.getElementById("betModal").classList.add("show");
 }
 function updatePay(){const a=parseInt(document.getElementById("betAmount").value)||0;document.getElementById("payoutPreview").textContent=fmtBalance(Math.floor(a*currentCoef));}
 document.getElementById("betAmount").addEventListener("input",updatePay);
@@ -3561,28 +3523,29 @@ async function confirmBet(){
   if(!a||a<100000){toast("Мин. 100.000",true);return;}
   if(a>balance){toast("Недостаточно",true);return;}
   try{
-    const r=await fetch("/api/bet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData,matchId:currentMatch.id,pick:currentPick,amount:a,coefficient:currentCoef,competition:currentComp})});
+    const r=await fetch("/api/bet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:initData,matchId:currentMatch.id,pick:currentPick,amount:a,coefficient:currentCoef,competition:currentComp})});
     const d=await r.json();
-    if(d.ok){balance=d.balance;document.getElementById("balance").textContent=fmtBalance(balance);closeModal();toast(`✅ Ставка ${fmtBalance(a)}`);}
+    if(d.ok){balance=d.balance;document.getElementById("balance").textContent=fmtBalance(balance);closeModal();toast("✅ Ставка "+fmtBalance(a));}
     else toast("❌ "+d.error,true);
   }catch(e){toast("Ошибка",true);}
 }
 async function renderMyBets(){
   const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';
+  if(!initData){el.innerHTML='<div class="empty">Нет initData</div>';return;}
   try{
-    const r=await fetch(`/api/my_bets?initData=${encodeURIComponent(initData)}`);const d=await r.json();
+    const r=await fetch("/api/my_bets?initData="+encodeURIComponent(initData));const d=await r.json();
     if(!d.bets||!d.bets.length){el.innerHTML='<div class="empty"><div class="empty-icon">🎯</div>У тебя нет ставок</div>';return;}
     el.innerHTML="";
     d.bets.forEach(b=>{
-      const lbl=b.pick==="home"?`Победа 1 (${b.home})`:b.pick==="draw"?"Ничья":`Победа 2 (${b.away})`;
+      const lbl=b.pick==="home"?("Победа 1 ("+b.home+")"):b.pick==="draw"?"Ничья":("Победа 2 ("+b.away+")");
       let st="⏳ В игре",cls="";
-      if(b.status==="won"){st=`✅ ВЫИГРЫШ +${fmtBalance(b.payout)}`;cls="color:var(--accent);font-weight:700";}
+      if(b.status==="won"){st="✅ ВЫИГРЫШ +"+fmtBalance(b.payout);cls="color:var(--accent);font-weight:700";}
       if(b.status==="lost"){st="❌ Проигрыш";cls="color:var(--red);font-weight:700";}
       const d2=document.createElement("div");d2.className="match";
-      d2.innerHTML=`<div style="font-weight:700;margin-bottom:8px">${b.home} — ${b.away}</div><div style="font-size:12px;color:var(--text2);margin-bottom:6px">${lbl} · ${fmtBalance(b.amount)} · x${(b.coefficient||1).toFixed(2)}</div><div style="font-size:12px;${cls}">${st}</div>`;
+      d2.innerHTML='<div style="font-weight:700;margin-bottom:8px">'+b.home+" — "+b.away+'</div><div style="font-size:12px;color:var(--text2);margin-bottom:6px">'+lbl+" · "+fmtBalance(b.amount)+" · x"+(b.coefficient||1).toFixed(2)+'</div><div style="font-size:12px;'+cls+'">'+st+'</div>';
       el.appendChild(d2);
     });
-  }catch(e){el.innerHTML=`<div class="error">${e.message}</div>`;}
+  }catch(e){el.innerHTML='<div class="error">'+e.message+'</div>';}
 }
 function showTab(t){
   currentTab=t;
@@ -3601,9 +3564,7 @@ async def index(): return FOOTBALL_HTML
 
 @app.get("/health")
 async def health(): return {"status":"ok"}
-
-@app.get("/health")
-async def health(): return {"status":"ok"} # ========= ЦИКЛЫ =========
+     # ========= ЦИКЛЫ =========
 async def top3_loop():
     while True:
         try:
@@ -3666,7 +3627,6 @@ async def drop_loop():
         except Exception as e: print(f"drop: {e}")
 
 async def football_result_loop():
-    """Каждые 2 минуты проверяет завершившиеся матчи и рассчитывает ставки."""
     while True:
         try:
             conn = get_db_connection(); c = conn.cursor()
@@ -3674,19 +3634,17 @@ async def football_result_loop():
             ids = [r[0] for r in c.fetchall()]; conn.close()
             for fid in ids:
                 try:
-                    d = await fb_fixture(fid)
-                    resp = d.get("response",[])
+                    d = await fb_fixture(fid); resp = d.get("response", [])
                     if not resp: continue
                     m = resp[0]
                 except: continue
                 st = m["fixture"]["status"]["short"]
                 if st not in ("FT","AET","PEN","AWD","WO"): continue
-                goals = m.get("goals",{})
-                hs = goals.get("home"); as_ = goals.get("away")
+                g = m.get("goals", {})
+                hs = g.get("home"); as_ = g.get("away")
                 if hs is None or as_ is None: continue
                 res = "home" if hs > as_ else "away" if hs < as_ else "draw"
-                hn = m["teams"]["home"]["name"]
-                an = m["teams"]["away"]["name"]
+                hn = m["teams"]["home"]["name"]; an = m["teams"]["away"]["name"]
                 conn = get_db_connection(); c = conn.cursor()
                 c.execute("SELECT id,user_id,pick,amount,coefficient FROM football_bets WHERE fixture_id = ? AND status = 'pending'", (fid,))
                 for bid, uid, pick, amount, coef in c.fetchall():
@@ -3708,7 +3666,6 @@ async def football_result_loop():
         await asyncio.sleep(120)
 
 async def football_reminder_loop():
-    """Проверяет каждые 5 минут: если до матча 15±2 мин и reminder не отправлен — шлёт."""
     while True:
         try:
             conn = get_db_connection(); c = conn.cursor()
@@ -3717,8 +3674,7 @@ async def football_reminder_loop():
             now = datetime.utcnow()
             for bid, uid, fid, home, away, pick, amount in bets:
                 try:
-                    d = await fb_fixture(fid)
-                    resp = d.get("response",[])
+                    d = await fb_fixture(fid); resp = d.get("response", [])
                     if not resp: continue
                     utc_str = resp[0]["fixture"]["date"]
                     utc = datetime.fromisoformat(utc_str.replace("Z","+00:00")).replace(tzinfo=None)
@@ -3726,7 +3682,7 @@ async def football_reminder_loop():
                     if 12 <= diff <= 18:
                         lbl = "П1" if pick == "home" else "Х" if pick == "draw" else "П2"
                         try:
-                            await bot.send_message(uid, f"⏰ Напоминание: матч {home} — {away} начнётся примерно через 15 минут!\nТвоя ставка: {lbl} на {format_balance(amount)}", parse_mode=ParseMode.HTML)
+                            await bot.send_message(uid, f"⏰ Напоминание: матч {home} — {away} начнётся через 15 мин!\nТвоя ставка: {lbl} на {format_balance(amount)}", parse_mode=ParseMode.HTML)
                         except: pass
                         conn = get_db_connection(); c = conn.cursor()
                         c.execute("UPDATE football_bets SET reminded = 1 WHERE id = ?", (bid,))
@@ -3735,6 +3691,20 @@ async def football_reminder_loop():
         except Exception as e:
             print(f"fb remind: {e}")
         await asyncio.sleep(300)
+
+# ========= КОМАНДА /состав =========
+@dp.message(Command("состав"))
+async def squad_cmd(m: Message, cmd: CommandObject):
+    args = (cmd.args or "").strip()
+    if not args:
+        await m.answer("❌ Использование: <code>/состав Название команды</code>\nПример: <code>/состав Зенит</code>", parse_mode=ParseMode.HTML); return
+    home_squad = get_squad(args)
+    away_squad = DEFAULT_SQUAD
+    try:
+        img = draw_football_field(args, "Соперник", home_squad, away_squad)
+        await m.answer_photo(photo=img, caption=f"⚽ Состав: <b>{args}</b>", parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await m.answer(f"❌ Ошибка генерации: {e}")
 
 # ========= ЗАПУСК =========
 _started = {"done": False}
@@ -3769,25 +3739,6 @@ async def _run_bot():
         import traceback
         traceback.print_exc()
 
-# ========= ДОП. КОМАНДА: посмотреть состав =========
-@dp.message(Command("состав"))
-async def squad_cmd(m: Message, cmd: CommandObject):
-    """Показать состав команды (картинка поля). Использование: /состав Зенит"""
-    args = (cmd.args or "").strip()
-    if not args:
-        await m.answer("❌ Использование: <code>/состав Название команды</code>\nПример: <code>/состав Зенит</code>", parse_mode=ParseMode.HTML); return
-    home_name = args
-    home_squad = get_squad(home_name)
-    # берём случайного противника — или пустой
-    away_name = "Соперник"
-    away_squad = DEFAULT_SQUAD
-    try:
-        img = draw_football_field(home_name, away_name, home_squad, away_squad)
-        await m.answer_photo(photo=img, caption=f"⚽ Состав: <b>{home_name}</b>", parse_mode=ParseMode.HTML)
-    except Exception as e:
-        await m.answer(f"❌ Ошибка генерации: {e}")
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-  
