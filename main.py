@@ -3138,7 +3138,7 @@ async def fb_matches(comp):
                 print(f"[FB] {comp} s{season} ERR: {e}", flush=True)
     return matches[:40]
 
-def fb_fixture(fid):
+async def fb_fixture(fid):
     return await fb_get("/fixtures", {"id": fid})
 
 async def fb_standings(comp):
