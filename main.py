@@ -2889,7 +2889,20 @@ function statusLabel(m){
   return`<span class="status-sched">${fmtDate(m.utcDate)} · ${fmtTime(m.utcDate)}</span>`;
 }
 async function loadBalance(){
-  try{const r=await fetch(`/api/my_balance?initData=${encodeURIComponent(initData)}`);const d=await r.json();balance=d.balance||0;document.getElementById("balance").textContent=fmtBalance(balance);}catch(e){}
+  try{
+    const r=await fetch(`/api/my_balance?initData=${encodeURIComponent(initData)}`);
+    const d=await r.json();
+    if(r.status!==200){
+      document.getElementById("balance").textContent="ERR:"+(d.detail||d.error||r.status);
+      document.getElementById("balance").style.fontSize="10px";
+      return;
+    }
+    balance=d.balance||0;
+    document.getElementById("balance").textContent=fmtBalance(balance);
+  }catch(e){
+    document.getElementById("balance").textContent="NET:"+e.message;
+    document.getElementById("balance").style.fontSize="10px";
+  }
 }
 async function loadComps(){
   const r=await fetch("/api/competitions");const comps=await r.json();
