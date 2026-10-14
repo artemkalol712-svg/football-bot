@@ -722,7 +722,7 @@ async def wardrobe_menu(m: Message):
 c.execute("SELECT wardrobe_slots FROM users WHERE user_id = ?", (uid,))
 sr = c.fetchone()
 if not sr: await m.answer("Сначала зарегистрируйся через /start"); conn.close(); return
-    total = max(sr[0], DEFAULT_WARDROBE_SLOTS)
+total = max(sr[0], DEFAULT_WARDROBE_SLOTS)
     c.execute("SELECT slot,item_name,item_id,file_id FROM wardrobe WHERE user_id = ? ORDER BY slot", (uid,))
     items = c.fetchall()
     c.execute("SELECT file_id FROM equipped_outfit WHERE user_id = ?", (uid,))
