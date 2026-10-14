@@ -3101,41 +3101,44 @@ async def fb_fixtures_next(league_id, next_n=15):
     return await fb_get("/fixtures", {"league": league_id, "next": next_n})
 
 async def fb_matches(comp):
+    """Пробует сезоны 2025, 2024, 2026 по очереди."""
     matches = []
     today = datetime.utcnow().date()
-    # 1. пробуем сегодня + завтра + послезавтра
+    # сначала пробуем даты по 3 дня вперёд без сезона
     for off in [0, 1, 2]:
         d = today + timedelta(days=off)
         try:
-            data = await fb_fixtures_by_date(comp, d.isoformat())
+            data = await fb_get("/fixtures", {"league": comp, "date": d.isoformat()})
             got = data.get("response", [])
             print(f"[FB] {comp} {d}: {len(got)}", flush=True)
             matches.extend(got)
+            if len(matches) >= 15: break
         except Exception as e:
             print(f"[FB] {comp} {d} ERR: {e}", flush=True)
-    # 2. если пусто — берём ближайшие 15 через параметр next
+    # если пусто — пробуем next=15 без сезона
     if not matches:
         try:
-            data = await fb_fixtures_next(comp, 15)
+            data = await fb_get("/fixtures", {"league": comp, "next": 15})
             got = data.get("response", [])
-            print(f"[FB] {comp} next15: {len(got)}", flush=True)
+            print(f"[FB] {comp} next: {len(got)}", flush=True)
             matches.extend(got)
         except Exception as e:
-            print(f"[FB] {comp} next15 ERR: {e}", flush=True)
-    # 3. если всё ещё пусто — идём на 14 дней вперёд
+            print(f"[FB] {comp} next ERR: {e}", flush=True)
+    # если всё ещё пусто — пробуем сезоны по очереди
     if not matches:
-        for off in range(3, 15):
-            d = today + timedelta(days=off)
+        for season in [2025, 2024, 2026]:
             try:
-                data = await fb_fixtures_by_date(comp, d.isoformat())
+                data = await fb_get("/fixtures", {"league": comp, "season": season})
                 got = data.get("response", [])
-                print(f"[FB] {comp} {d}: {len(got)}", flush=True)
-                matches.extend(got)
-                if len(matches) >= 15: break
-            except: continue
+                print(f"[FB] {comp} s{season}: {len(got)}", flush=True)
+                if got:
+                    matches.extend(got)
+                    break
+            except Exception as e:
+                print(f"[FB] {comp} s{season} ERR: {e}", flush=True)
     return matches[:40]
 
-async def fb_fixture(fid):
+def fb_fixture(fid):
     return await fb_get("/fixtures", {"id": fid})
 
 async def fb_standings(comp):
