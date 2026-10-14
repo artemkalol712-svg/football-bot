@@ -231,6 +231,89 @@ def get_squad(team_name):
     return DEFAULT_SQUAD
 
 # ========= FSM States =========
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+app = FastAPI()
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+def column_exists(cursor, t, c):
+    cursor.execute(f"PRAGMA table_info({t})")
+    return c in [x[1] for x in cursor.fetchall()]
+
+def init_db():
+    conn = get_db_connection(); c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, nick TEXT UNIQUE,
+        balance INTEGER DEFAULT 0, last_bonus TEXT, referrer_id INTEGER, registered_at TEXT,
+        city TEXT DEFAULT 'рублёвка', travel_end_time TEXT, referals_count INTEGER DEFAULT 0,
+        is_banned INTEGER DEFAULT 0, wardrobe_slots INTEGER DEFAULT 5, top_visible INTEGER DEFAULT 1,
+        username TEXT, taxi_rent_until TEXT, taxi_earnings INTEGER DEFAULT 0,
+        total_taxi_rides INTEGER DEFAULT 0, taxi_current_order INTEGER DEFAULT NULL,
+        taxi_order_end TEXT, taxi_stars INTEGER DEFAULT 0, taxi_stars_started TEXT,
+        taxi_stars_claimed INTEGER DEFAULT 0, taxi_collect_accum INTEGER DEFAULT 0,
+        rebus_uses INTEGER DEFAULT 0, rebus_reset TEXT)''')
+    for col, ct in [("top_visible","INTEGER DEFAULT 1"),("wardrobe_slots","INTEGER DEFAULT 5"),
+        ("username","TEXT"),("taxi_rent_until","TEXT"),("taxi_earnings","INTEGER DEFAULT 0"),
+        ("total_taxi_rides","INTEGER DEFAULT 0"),("taxi_current_order","INTEGER DEFAULT NULL"),
+        ("taxi_order_end","TEXT"),("taxi_stars","INTEGER DEFAULT 0"),
+        ("taxi_stars_started","TEXT"),("taxi_stars_claimed","INTEGER DEFAULT 0"),
+        ("taxi_collect_accum","INTEGER DEFAULT 0"),("rebus_uses","INTEGER DEFAULT 0"),
+        ("rebus_reset","TEXT")]:
+        if not column_exists(c,'users',col):
+            try: c.execute(f"ALTER TABLE users ADD COLUMN {col} {ct}")
+            except: pass
+    c.execute('CREATE TABLE IF NOT EXISTS settings (user_id INTEGER PRIMARY KEY, confirm_transfer INTEGER DEFAULT 1)')
+    c.execute('CREATE TABLE IF NOT EXISTS clicker (user_id INTEGER PRIMARY KEY, clicks INTEGER DEFAULT 0, last_reset TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS bank (user_id INTEGER PRIMARY KEY, deposit INTEGER DEFAULT 0, deposit_time TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS roulette_images (number INTEGER PRIMARY KEY, file_id TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS promocodes (name TEXT PRIMARY KEY, amount INTEGER, activations_left INTEGER, total_activations INTEGER, creator_id INTEGER, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS checks (check_id TEXT PRIMARY KEY, amount INTEGER, activations_left INTEGER, total_activations INTEGER, creator_id INTEGER, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS check_activations (check_id TEXT, user_id INTEGER, PRIMARY KEY (check_id, user_id))')
+    c.execute('CREATE TABLE IF NOT EXISTS gifts (gift_id TEXT PRIMARY KEY, amount INTEGER, activations_left INTEGER, creator_id INTEGER, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS market_items (id INTEGER PRIMARY KEY, name TEXT, price INTEGER, file_id TEXT, created_by INTEGER, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS donate_items (id INTEGER PRIMARY KEY, name TEXT, file_id TEXT, created_by INTEGER, created_at TEXT)')
+    c.execute("CREATE TABLE IF NOT EXISTS houses (id INTEGER PRIMARY KEY, price INTEGER, file_id TEXT, name TEXT DEFAULT '', created_by INTEGER, created_at TEXT)")
+    if not column_exists(c,'houses','name'):
+        try: c.execute("ALTER TABLE houses ADD COLUMN name TEXT DEFAULT ''")
+        except: pass
+    c.execute('CREATE TABLE IF NOT EXISTS wardrobe (user_id INTEGER, slot INTEGER, item_type TEXT, item_id INTEGER, item_name TEXT, file_id TEXT, price INTEGER DEFAULT 0, PRIMARY KEY (user_id, slot))')
+    for col, ct in [("file_id","TEXT"),("price","INTEGER DEFAULT 0")]:
+        if not column_exists(c,'wardrobe',col):
+            try: c.execute(f"ALTER TABLE wardrobe ADD COLUMN {col} {ct}")
+            except: pass
+    c.execute('CREATE TABLE IF NOT EXISTS equipped_outfit (user_id INTEGER PRIMARY KEY, file_id TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS equipped_house (user_id INTEGER PRIMARY KEY, file_id TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS taxi_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, order_type INTEGER, earnings INTEGER DEFAULT 0, completed INTEGER DEFAULT 0, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS chat_stats (chat_id INTEGER, user_id INTEGER, roul_won INTEGER DEFAULT 0, roul_lost INTEGER DEFAULT 0, dice_won INTEGER DEFAULT 0, dice_lost INTEGER DEFAULT 0, slot_won INTEGER DEFAULT 0, slot_lost INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))')
+    c.execute('CREATE TABLE IF NOT EXISTS command_stats (chat_id INTEGER, user_id INTEGER, command TEXT, count INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id, command))')
+    c.execute('CREATE TABLE IF NOT EXISTS pm_items (id INTEGER PRIMARY KEY AUTOINCREMENT, seller_id INTEGER, kind TEXT, item_name TEXT, file_id TEXT, price INTEGER, sold INTEGER DEFAULT 0, created_at TEXT, wardrobe_slot INTEGER DEFAULT NULL)')
+    c.execute('CREATE TABLE IF NOT EXISTS pm_daily (kind TEXT PRIMARY KEY, sold_today INTEGER DEFAULT 0, day_start TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS bot_usage (user_id INTEGER PRIMARY KEY, total INTEGER DEFAULT 0, updated_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS bot_settings (key TEXT PRIMARY KEY, value TEXT)')
+    c.execute('''CREATE TABLE IF NOT EXISTS football_bets (id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER, fixture_id INTEGER, competition TEXT, home_team TEXT, away_team TEXT,
+        pick TEXT, amount INTEGER, coefficient REAL, placed_at TEXT, status TEXT DEFAULT 'pending',
+        result TEXT, payout INTEGER DEFAULT 0, reminded INTEGER DEFAULT 0)''')
+    if not column_exists(c,'football_bets','reminded'):
+        try: c.execute("ALTER TABLE football_bets ADD COLUMN reminded INTEGER DEFAULT 0")
+        except: pass
+    conn.commit(); conn.close()
+
+init_db()
+
+def format_balance(n):
+    try: return f"₽{int(n):,}".replace(",",".")
+    except: return f"₽{n}"
+
+def parse_amount(s):
+    s = str(s).lower().strip().replace("ё","е").replace("ë","е")
+    s = s.replace("кккк","000000000000").replace("ккк","000000000").replace("кк","000000").replace("к","000")
+    return int(s)
+
 class RegStates(StatesGroup):
     waiting_nick = State()
     waiting_new_nick = State()
