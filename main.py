@@ -2094,7 +2094,7 @@ async def create_check_cmd(m: Message):
 
 transfer_words = ["кинуть","дать","передать","скинуть","перевести"]
     
-    async def find_usident):
+     async def find_user(ident):
     ident = ident.strip().lstrip('@').lower()
     if not ident: return None
     conn = get_db_connection(); c = conn.cursor()
@@ -2148,7 +2148,7 @@ async def transfer_cmd(m: Message):
     c.execute("SELECT nick,balance FROM users WHERE user_id = ?", (target.id,))
     r = c.fetchone(); conn.close()
     if not s: await m.answer("Сначала /start"); return
-    if not r: await m.answer("❌ Пользователь не зарегистрирован"); return
+    if not r: await m.answer("❌ Не зарегистрирован"); return
     if s[1] < amount: await m.answer(f"❌ Не хватает. Баланс: {format_balance(s[1])}"); return
     ns = s[1] - amount; nr = r[1] + amount
     conn = get_db_connection(); c = conn.cursor()
@@ -2158,9 +2158,7 @@ async def transfer_cmd(m: Message):
     await m.answer(f"✅ Перевёл {format_balance(amount)} игроку {get_nick_link(target.id, r[0])}\n💳 Баланс: {format_balance(ns)}", parse_mode=ParseMode.HTML)
     try: await bot.send_message(target.id, f"💸 Ты получил {format_balance(amount)} от {get_nick_link(uid, s[0])}\n💳 Баланс: {format_balance(nr)}", parse_mode=ParseMode.HTML)
     except: pass
-
-
-@dp.message(F.text.lower().startswith("кости"))
+        @dp.message(F.text.lower().startswith("кости"))
 async def dice_cmd(m: Message):
     if await check_stopped(m) or await check_banned(m): return
     if is_private(m):
@@ -2171,7 +2169,7 @@ async def dice_cmd(m: Message):
     c.execute("SELECT nick,balance FROM users WHERE user_id = ?", (uid,))
     s = c.fetchone(); conn.close()
     if not s: await m.answer("Сначала /start"); return
-    if not m.reply_to_message: await m.answer("❌ Используй в ответ на сообщение игрока"); return
+    if not m.reply_to_message: await m.answer("❌ В ответ на сообщение игрока"); return
     parts = m.text.split()
     if len(parts) < 2: await m.answer("❌ Пример: кости 1000000"); return
     try: amount = parse_amount(parts[1])
@@ -2243,7 +2241,6 @@ async def dice_dec_cb(cb: CallbackQuery):
     if gid in dice_games: del dice_games[gid]
     await cb.answer()
 
-
 @dp.message(F.text.regexp(r"(?i)^число\s+\S+"))
 async def number_cmd(m: Message):
     if await check_stopped(m) or await check_banned(m): return
@@ -2287,7 +2284,6 @@ async def guess_num(m: Message):
     else:
         diff = abs(guess - g["secret"])
         await m.reply("♨ тепло" if diff <= 20 else "❄ холодно")
-
 
 @dp.message(F.text.lower() == "топ")
 async def top_cmd(m: Message):
@@ -2398,7 +2394,7 @@ async def help_cmd(m: Message):
 • 🔗 рефералка — 15ккк за друга
 
 👤 ПРОФИЛЬ:
-• я — показать профиль
+• я — профиль
 • стата — статистика
 • шкаф — вещи
 • продажа — продать за 35%
@@ -2426,7 +2422,6 @@ async def help_cmd(m: Message):
 
 ⚽ ФУТБОЛ:
 • Football Чел — ставки в Mini App""", reply_markup=get_full_keyboard() if is_private(m) else None)
-
 
 @dp.message(Command("стоп"))
 async def stop_bot_cmd(m: Message, cmd: CommandObject):
@@ -2608,7 +2603,8 @@ async def adm_cmd(m: Message):
 ✅ /старт бот
 
 💰 /выдать_себе [сумма]
-💰 /выдать [сумма] — в ответ💰 /всем [сумма]
+💰 /выдать [сумма] — в ответ
+💰 /всем [сумма]
 
 🔨 /бан @ник
 🔨 /разбан @ник
@@ -2628,8 +2624,6 @@ async def adm_cmd(m: Message):
 🏠 /удалить_дом [номер]
 
 💾 /бэкап""", parse_mode=ParseMode.HTML)
-
-
 COMPETITIONS_FOOTBALL = {
     "PL":"🏴 Premier League","PD":"🇪🇸 La Liga","BL1":"🇩🇪 Bundesliga",
     "SA":"🇮🇹 Serie A","FL1":"🇫🇷 Ligue 1","DED":"🇳🇱 Eredivisie",
@@ -2818,7 +2812,6 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:flex-end;justify-content:center}
 .modal-bg.show{display:flex}
 .modal{background:#fff;border-radius:24px 24px 0 0;padding:20px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto}
-.modal::before{content:"";display:block;width:40px;height:4px;background:var(--border);border-radius:100px;margin:0 auto 16px}
 .modal-title{font-size:16px;font-weight:700;margin-bottom:8px}
 .modal-sub{font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.5}
 .amount-input{width:100%;background:var(--card2);border:1.5px solid var(--border);color:var(--text);padding:14px;border-radius:14px;font-size:18px;font-weight:700;outline:none;margin-bottom:12px}
@@ -2872,7 +2865,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 <div class="modal-bg" id="detailModal"><div class="modal">
 <div class="modal-title" id="detailTitle">Матч</div>
 <div id="detailContent" style="font-size:13px;line-height:1.8;color:var(--text2)"></div>
-<div style="margin-top:16px;text-align:center"><button class="btn-cancel" style="width:100%;padding:14px;border-radius:14px;border:none;font-weight:700" onclick="closeDetail()">Закрыть</button></div>
+<div style="margin-top:16px"><button class="btn-cancel" style="width:100%;padding:14px;border-radius:14px;border:none;font-weight:700" onclick="closeDetail()">Закрыть</button></div>
 </div></div>
 <div class="toast" id="toast"></div>
 <div class="bottom-nav" id="bottom-nav">
@@ -2929,15 +2922,12 @@ function renderMatch(m){
 <div class="team ${fa&&!lk?'fav':''}"><div class="team-logo-wrap"><img src="${m.away.crest}" onerror="this.style.display='none'"></div><div class="team-name">${m.away.name}</div></div>
 </div>
 <div class="odds">
-<button class="${fh?'fav':''}" data-p="home" ${lk?'disabled':''}><span class="odds-label-pick">П1</span><span class="odds-coef">${o.home.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.home_chance}%</span>`}</button>
-<button data-p="draw" ${lk?'disabled':''}><span class="odds-label-pick">Х</span><span class="odds-coef">${o.draw.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.draw_chance}%</span>`}</button>
-<button class="${fa?'fav':''}" data-p="away" ${lk?'disabled':''}><span class="odds-label-pick">П2</span><span class="odds-coef">${o.away.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.away_chance}%</span>`}</button>
+<button class="${fh?'fav':''}" data-p="home" ${lk?'disabled':''}><span class="odds-label-pick">П1</span><span class="odds-coef">${o.home.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.home_chance}%</span>`}</button>
+<button data-p="draw" ${lk?'disabled':''}><span class="odds-label-pick">Х</span><span class="odds-coef">${o.draw.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.draw_chance}%</span>`}</button>
+<button class="${fa?'fav':''}" data-p="away" ${lk?'disabled':''}><span class="odds-label-pick">П2</span><span class="odds-coef">${o.away.toFixed(2)}</span>${lk?'':`<span class="odds-chance">${o.away_chance}%</span>`}</button>
 </div>`;
   c.onclick=(e)=>{if(e.target.closest(".odds button"))return;openDetail(m.id);};
-  c.querySelectorAll(".odds button").forEach(b=>{
-    if(b.disabled)return;
-    b.onclick=(e)=>{e.stopPropagation();openBet(m,b.dataset.p,o[b.dataset.p]);};
-  });
+  c.querySelectorAll(".odds button").forEach(b=>{if(b.disabled)return;b.onclick=(e)=>{e.stopPropagation();openBet(m,b.dataset.p,o[b.dataset.p]);};});
   return c;
 }
 async function openDetail(mid){
@@ -2949,8 +2939,7 @@ async function openDetail(mid){
     if(m.error){document.getElementById("detailContent").innerHTML=`<div class="error">${m.error}</div>`;return;}
     const h=m.homeTeam||{},a=m.awayTeam||{};
     const hs=m.score?.fullTime?.home,as_=m.score?.fullTime?.away;
-    const lv=isLive(m),fn=isFinished(m);
-    const ss=(lv||fn)&&hs!==null&&as_!==null;
+    const lv=isLive(m),fn=isFinished(m);const ss=(lv||fn)&&hs!==null&&as_!==null;
     let html=`<div style="text-align:center;margin-bottom:16px">
       <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${m.competition?.name||""}</div>
       <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px">
@@ -2958,12 +2947,12 @@ async function openDetail(mid){
         <div style="font-size:24px;font-weight:800">${ss?hs+":"+as_:"VS"}</div>
         <div style="text-align:center;flex:1"><img src="${a.crest||''}" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">${a.shortName||a.name||''}</div></div>
       </div>
-      <div style="font-size:11px;color:var(--text2)">${lv?'🔴 LIVE '+m.minute+"'":fn?'✓ Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate)}</div>
+      <div style="font-size:11px;color:var(--text2)">${lv?'🔴 LIVE '+(m.minute||'')+"'":fn?'✓ Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate)}</div>
     </div>
     <div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px">
       <div>Стадион: <b>${m.venue||"—"}</b></div>
       <div>Тур: <b>${m.matchday?("День "+m.matchday):"—"}</b></div>
-      <div>Судья: <b>${(m.referees&&m.referees[0]?.name)||"—"}</b></div>
+      <div>Судья: <b>${(m.referees&&m.referees[0]&&m.referees[0].name)||"—"}</b></div>
     </div>`;
     document.getElementById("detailTitle").textContent="Матч #"+mid;
     document.getElementById("detailContent").innerHTML=html;
@@ -3017,7 +3006,7 @@ function showTab(t){
   document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));
   document.querySelectorAll(".bottom-nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
   const tb=document.getElementById("tab-"+t);if(tb)tb.classList.add("active");
-  if(t==="matches")loadMatches();else renderMyBets();
+  if(t=="matches")loadMatches();else renderMyBets();
 }
 loadBalance();loadComps().then(loadMatches);
 </script>
@@ -3029,7 +3018,6 @@ async def index(): return FOOTBALL_HTML
 
 @app.get("/health")
 async def health(): return {"status":"ok"}
-
 
 async def top3_loop():
     while True:
