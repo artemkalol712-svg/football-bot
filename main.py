@@ -3066,9 +3066,7 @@ async def adm_cmd(m: Message):
 
 COMPETITIONS_FOOTBALL = {
     "PL":"🏴 Premier League","PD":"🇪🇸 La Liga","BL1":"🇩🇪 Bundesliga",
-    "SA":"🇮🇹 Serie A","FL1":"🇫🇷 Ligue 1","DED":"🇳🇱 Eredivisie",
-    "PPL":"🇵🇹 Primeira Liga","ELC":"🏴 Championship","CL":"🏆 Champions League",
-    "BSA":"🇧🇷 Brasileirão"}
+    "SA":"🇮🇹 Serie A","FL1":"🇫🇷 Ligue 1","CL":"🏆 Champions League"}
 
 _fb_cache = {}; FB_TTL = 60
 
