@@ -423,7 +423,7 @@ async def ref_cmd(m: Message):
 async def copy_link_cb(cb: CallbackQuery):
     link = f"https://t.me/{BOT_USERNAME}?start=ref_{cb.from_user.id}"
     await cb.answer(f"Ссылка скопирована: {link}", show_alert=True)
-  RUL_ALIASES = {
+RUL_ALIASES = {
     "красное":"кра","красный":"кра","красная":"кра","красн":"кра","крас":"кра","кра":"кра",
     "чёрное":"чер","черное":"чер","чёрный":"чер","черный":"чер","чёрная":"чер","черная":"чер",
     "чёрн":"чер","черн":"чер","чёр":"чер","чер":"чер",
