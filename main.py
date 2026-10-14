@@ -573,16 +573,38 @@ async def slot_cmd(m: Message):
         wa = int(amount*14.5); nb = u[0] + wa
         conn = get_db_connection(); c = conn.cursor()
         c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (nb, uid)); conn.commit(); conn.close()
-        await m.answer(f"{get_nick_link(uid,u[1])}, 🎉 ДЖЕКПОТ! 🎉 Ты выиграл {format_balance(wa)} (x14.5)!\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
+                await m.answer(f"{get_nick_link(uid,u[1])}, 🎉 ДЖЕКПОТ! 🎉 Ты выиграл {format_balance(wa)} (x14.5)!\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
     else:
         nb = u[0] - amount
         conn = get_db_connection(); c = conn.cursor()
-        c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (nb, uid)); conn.commit(); conn.close()
+        c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (nb, uid))
+        conn.commit(); conn.close()
         await m.answer(f"{get_nick_link(uid,u[1])}, К сожалению ты проиграл {format_balance(amount)} (x0).\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
-      async def download_image_by_file_id(fid):
+
+
+async def download_image_by_file_id(fid):
     f = await bot.get_file(fid)
     b = await bot.download_file(f.file_path)
     return io.BytesIO(b.getvalue())
+
+async def get_character_image():
+    if _character_cache["loaded"]: return _character_cache["img"]
+    _character_cache["loaded"] = True
+    for fn in ("character.png","character.jpg","character.webp"):
+        if os.path.exists(fn):
+            try:
+                img = Image.open(fn).convert("RGBA")
+                _character_cache["img"] = img; return img
+            except: pass
+    try:
+        timeout = aiohttp.ClientTimeout(total=15, connect=10)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.get(CHARACTER_IMAGE_URL) as r:
+                d = await r.read()
+                img = Image.open(io.BytesIO(d)).convert("RGBA")
+                _character_cache["img"] = img; return img
+    except Exception as e: print(f"char: {e}")
+    _character_cache["img"] = None; return None
 
 async def get_character_image():
     if _character_cache["loaded"]: return _character_cache["img"]
