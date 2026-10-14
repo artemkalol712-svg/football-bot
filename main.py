@@ -3062,8 +3062,6 @@ async def adm_cmd(m: Message):
 ⚽ /состав [команда] — посмотреть состав
 💾 /бэкап""", parse_mode=ParseMode.HTML)
 
-# ========= ФУТБОЛ (API-Football для РПЛ и топ-5) =========
-COMPETITIONS_FOOTBALL = {
     # ========= ФУТБОЛ (API-Football) =========
 COMPETITIONS_FOOTBALL = {
     "39":"🏴 Premier League",
