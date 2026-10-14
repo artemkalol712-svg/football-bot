@@ -263,7 +263,7 @@ def add_to_wardrobe(c, uid, itype, iid, iname, fid, price):
         c.execute("UPDATE users SET wardrobe_slots = ? WHERE user_id = ?", (free, uid))
     c.execute("INSERT INTO wardrobe (user_id,slot,item_type,item_id,item_name,file_id,price) VALUES (?,?,?,?,?,?,?)",
         (uid, free, itype, iid, iname, fid, price or 0))
-    class RegStates(StatesGroup):
+class RegStates(StatesGroup):
     waiting_nick = State()
     waiting_new_nick = State()
 
