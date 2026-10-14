@@ -572,7 +572,7 @@ async def slot_cmd(m: Message):
         conn = get_db_connection(); c = conn.cursor()
         c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (nb, uid)); conn.commit(); conn.close()
         await m.answer(f"{get_nick_link(uid,u[1])}, К сожалению ты проиграл {format_balance(amount)} (x0).\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
-      async def download_image_by_file_id(fid):
+async def download_image_by_file_id(fid):
     f = await bot.get_file(fid)
     b = await bot.download_file(f.file_path)
     return io.BytesIO(b.getvalue())
