@@ -573,7 +573,7 @@ async def slot_cmd(m: Message):
         wa = int(amount*14.5); nb = u[0] + wa
         conn = get_db_connection(); c = conn.cursor()
         c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (nb, uid)); conn.commit(); conn.close()
-                await m.answer(f"{get_nick_link(uid,u[1])}, 🎉 ДЖЕКПОТ! 🎉 Ты выиграл {format_balance(wa)} (x14.5)!\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
+        await m.answer(f"{get_nick_link(uid,u[1])}, 🎉 ДЖЕКПОТ! 🎉 Ты выиграл {format_balance(wa)} (x14.5)!\nБаланс — {format_balance(nb)}", parse_mode=ParseMode.HTML)
     else:
         nb = u[0] - amount
         conn = get_db_connection(); c = conn.cursor()
