@@ -720,7 +720,7 @@ async def wardrobe_menu(m: Message):
     if await check_stopped(m) or await check_banned(m): return
     _bump_usage(m.from_user.id); uid = m.from_user.id
     conn = get_db_connection(); c = conn.cursor()
-    c.execute("SELECT wardrobe_slots FROM users WHERE user_id = ?", (uid,))
+c.execute("SELECT wardrobe_slots FROM users WHERE user_id = ?", (uid,))
     sr = c.fetchone()
     if not sr: await m.answer("Сначала зарегистрируйся через /start"); conn.close(); return
     total = max(sr[0], DEFAULT_WARDROBE_SLOTS)
