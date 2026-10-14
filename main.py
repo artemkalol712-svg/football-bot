@@ -714,7 +714,6 @@ async def del_house_cmd(m: Message):
     conn.commit(); conn.close()
     avatar_cache.pop(uid, None)
     await m.answer("✅ С тебя снят дом (фон)."); await send_profile(m, uid)
-
 @dp.message(F.text.lower() == "📦 шкаф")
 async def wardrobe_menu(m: Message):
     if await check_stopped(m) or await check_banned(m): return
