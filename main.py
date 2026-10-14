@@ -3064,9 +3064,26 @@ async def adm_cmd(m: Message):
 
 # ========= ФУТБОЛ (API-Football для РПЛ и топ-5) =========
 COMPETITIONS_FOOTBALL = {
-    "39":"🏴 Premier League","140":"🇪🇸 La Liga","78":"🇩🇪 Bundesliga",
-    "135":"🇮🇹 Serie A","61":"🇫🇷 Ligue 1","88":"🇳🇱 Eredivisie",
-    "94":"🇵🇹 Primeira Liga","235":"🇷🇺 РПЛ","2":"🏆 Champions League"}
+    # ========= ФУТБОЛ (API-Football) =========
+COMPETITIONS_FOOTBALL = {
+    "39":"🏴 Premier League",
+    "140":"🇪🇸 La Liga",
+    "78":"🇩🇪 Bundesliga",
+    "135":"🇮🇹 Serie A",
+    "61":"🇫🇷 Ligue 1",
+    "235":"🇷🇺 РПЛ",
+    "203":"🇹🇷 Süper Lig",
+    "2":"🏆 Champions League",
+    "3":"🏆 Europa League",
+    "848":"🏆 Conference League",
+    "88":"🇳🇱 Eredivisie",
+    "94":"🇵🇹 Primeira Liga",
+    "144":"🇧🇪 Jupiler Pro League",
+    "71":"🇧🇷 Brasileirão",
+    "128":"🇦🇷 Liga Profesional",
+    "253":"🇺🇸 MLS",
+    "292":"🇸🇦 Saudi Pro League",
+}
 
 _fb_cache = {}; FB_TTL = 90
 
@@ -3081,51 +3098,85 @@ async def fb_get(path, params=None):
         r = await client.get(f"{API_FOOTBALL_BASE}{path}",
             headers={"x-apisports-key": API_FOOTBALL_KEY},
             params=params or {})
-        if r.status_code == 429: raise Exception("Лимит API")
+        if r.status_code == 429: raise Exception("Лимит API (100/день)")
         if r.status_code == 403: raise Exception("Доступ запрещён")
         if r.status_code == 404: raise Exception("Не найдено")
         r.raise_for_status(); data = r.json()
-        if data.get("errors"):
-            errs = data["errors"]
-            if isinstance(errs, dict):
-                msg = ", ".join(f"{k}:{v}" for k,v in errs.items())
-            else: msg = str(errs)
-            if msg: raise Exception(msg)
+        errors = data.get("errors")
+        if errors:
+            if isinstance(errors, dict) and errors:
+                msg = ", ".join(f"{k}:{v}" for k, v in errors.items())
+                if msg: raise Exception(msg)
+            elif isinstance(errors, list) and errors:
+                raise Exception(str(errors))
     _fb_cache[key] = (data, now); return data
 
 async def fb_fixtures_by_date(league_id, date_str):
-    return await fb_get("/fixtures", {"league":league_id,"season":2024,"date":date_str})
+    return await fb_get("/fixtures", {"league": league_id, "season": 2026, "date": date_str})
 
 async def fb_matches(comp):
-    """Получает ближайшие матчи лиги (сегодня/завтра)."""
+    """Ближайшие матчи: сегодня + завтра, если пусто — 7 дней вперёд."""
     today = datetime.utcnow().date()
-    tomorrow = today + timedelta(days=1)
     matches = []
-    for d in [today, tomorrow]:
+    # сегодня и завтра
+    for d in [today, today + timedelta(days=1)]:
         try:
             data = await fb_fixtures_by_date(comp, d.isoformat())
             matches.extend(data.get("response", []))
         except Exception as e:
             print(f"fb fetch {comp} {d}: {e}")
-    # если нет — ищем дальше
+    # если нет — 7 дней
     if not matches:
-        for dd in range(2, 8):
+        for dd in range(2, 10):
             day = today + timedelta(days=dd)
             try:
                 data = await fb_fixtures_by_date(comp, day.isoformat())
                 matches.extend(data.get("response", []))
-                if len(matches) >= 10: break
-            except: continue
+                if len(matches) >= 15: break
+            except Exception as e:
+                print(f"fb fetch {comp} {day}: {e}")
     return matches[:40]
 
 async def fb_fixture(fid):
-    return await fb_get("/fixtures", {"id":fid})
+    return await fb_get("/fixtures", {"id": fid})
 
-def calc_odds_by_fixture(fx):
-    """Считает примерные коэффициенты от формы команд в API-ответе."""
-    # если API даёт свои коэфы — используем. Иначе считаем по форме
-    return {"home":2.10,"draw":3.30,"away":3.40,"favorite":"home",
-            "home_chance":45.0,"draw_chance":28.0,"away_chance":27.0}
+async def fb_standings(comp):
+    try:
+        return await fb_get("/standings", {"league": comp, "season": 2026})
+    except: return {"response": []}
+
+def calc_odds_from_standings(home_id, away_id, standings_data):
+    """Считает коэффициенты по позициям команд в таблице."""
+    def rk(tid):
+        try:
+            for block in standings_data.get("response", []):
+                for grp in block.get("league", {}).get("standings", []):
+                    for row in grp:
+                        if row["team"]["id"] == tid:
+                            return row["rank"]
+        except: pass
+        return 10
+    hp = rk(home_id); ap = rk(away_id)
+    diff = (ap - hp) / 10.0
+    h = max(0.10, min(0.75, 0.40 + 0.25 * diff))
+    a = max(0.10, min(0.75, 0.40 - 0.25 * diff))
+    d = max(0.15, 1 - h - a)
+    tot = h + a + d; h /= tot; a /= tot; d /= tot
+    mg = 1.10
+    return {
+        "home": round(1/h*mg, 2), "draw": round(1/d*mg, 2), "away": round(1/a*mg, 2),
+        "favorite": "home" if h > a else "away",
+        "home_chance": round(h*100, 1),
+        "draw_chance": round(d*100, 1),
+        "away_chance": round(a*100, 1)
+    }
+
+def verify_init(init):
+    if not init: raise HTTPException(401, "no initData")
+    try:
+        return safe_parse_webapp_init_data(token=BOT_TOKEN, init_data=init).user.id
+    except Exception as e:
+        raise HTTPException(401, f"invalid: {e}")
 
 @app.get("/api/competitions")
 async def api_comps(): return COMPETITIONS_FOOTBALL
@@ -3134,62 +3185,77 @@ async def api_comps(): return COMPETITIONS_FOOTBALL
 async def api_matches(competition: str = "39"):
     try:
         ms = await fb_matches(competition)
-    except Exception as e: return JSONResponse({"error":str(e)}, status_code=500)
+        st = await fb_standings(competition)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
     res = []
     for m in ms:
         try:
-            fixture = m["fixture"]; teams = m["teams"]; goals = m.get("goals",{}); league = m.get("league",{})
-            status_short = fixture.get("status",{}).get("short","NS")
-            # мапинг статусов
-            status_map = {"NS":"SCHEDULED","TBD":"SCHEDULED","1H":"IN_PLAY","HT":"PAUSED","2H":"IN_PLAY",
-                "ET":"IN_PLAY","P":"IN_PLAY","FT":"FINISHED","AET":"FINISHED","PEN":"FINISHED",
-                "SUSP":"PAUSED","INT":"PAUSED","PST":"POSTPONED","CANC":"CANCELLED","ABD":"CANCELLED",
-                "AWD":"FINISHED","WO":"FINISHED","LIVE":"IN_PLAY"}
+            fixture = m["fixture"]; teams = m["teams"]; goals = m.get("goals", {}); league = m.get("league", {})
+            status_short = fixture.get("status", {}).get("short", "NS")
+            status_map = {
+                "NS": "SCHEDULED", "TBD": "SCHEDULED", "1H": "IN_PLAY", "HT": "PAUSED",
+                "2H": "IN_PLAY", "ET": "IN_PLAY", "P": "IN_PLAY", "FT": "FINISHED",
+                "AET": "FINISHED", "PEN": "FINISHED", "SUSP": "PAUSED", "INT": "PAUSED",
+                "PST": "POSTPONED", "CANC": "CANCELLED", "ABD": "CANCELLED",
+                "AWD": "FINISHED", "WO": "FINISHED", "LIVE": "IN_PLAY"
+            }
             status = status_map.get(status_short, "SCHEDULED")
-            minute = fixture.get("status",{}).get("elapsed")
-            odds = calc_odds_by_fixture(m)
+            minute = fixture.get("status", {}).get("elapsed")
+            odds = calc_odds_from_standings(teams["home"]["id"], teams["away"]["id"], st)
             res.append({
                 "id": fixture["id"],
-                "competition": league.get("name",""),
+                "competition": league.get("name", ""),
                 "utcDate": fixture["date"],
-                "status": status, "minute": minute,
-                "home": {"id": teams["home"]["id"], "name": teams["home"]["name"], "crest": teams["home"].get("logo","")},
-                "away": {"id": teams["away"]["id"], "name": teams["away"]["name"], "crest": teams["away"].get("logo","")},
+                "status": status,
+                "minute": minute,
+                "home": {"id": teams["home"]["id"], "name": teams["home"]["name"], "crest": teams["home"].get("logo", "")},
+                "away": {"id": teams["away"]["id"], "name": teams["away"]["name"], "crest": teams["away"].get("logo", "")},
                 "score": {"home": goals.get("home"), "away": goals.get("away")},
                 "odds": odds
             })
-        except Exception as e: print(f"parse match: {e}"); continue
-    return {"matches":res}
+        except Exception as e:
+            print(f"parse match: {e}"); continue
+    return {"matches": res}
 
 @app.get("/api/match/{mid}")
 async def api_match(mid: int):
     try:
         d = await fb_fixture(mid)
-        resp = d.get("response",[])
+        resp = d.get("response", [])
         if not resp: raise Exception("Матч не найден")
         return resp[0]
-    except Exception as e: return JSONResponse({"error":str(e)}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/lineup/{mid}")
 async def api_lineup(mid: int):
-    """Возвращает составы команд (2 массива с игроками)."""
     try:
-        d = await fb_get("/fixtures/lineups", {"fixture":mid})
-        resp = d.get("response",[])
+        d = await fb_get("/fixtures/lineups", {"fixture": mid})
+        resp = d.get("response", [])
         result = []
         for team_data in resp:
-            team = team_data.get("team",{})
-            formation = team_data.get("formation","")
-            startXI = team_data.get("startXI",[])
+            team = team_data.get("team", {})
+            formation = team_data.get("formation", "")
+            startXI = team_data.get("startXI", [])
             players = []
             for p in startXI:
-                pl = p.get("player",{})
-                players.append({"name": pl.get("name","?"), "number": pl.get("number"),
-                                "pos": pl.get("pos",""), "grid": pl.get("grid","")})
-            result.append({"team":team.get("name",""), "logo": team.get("logo",""),
-                           "formation":formation, "players":players})
+                pl = p.get("player", {})
+                players.append({
+                    "name": pl.get("name", "?"),
+                    "number": pl.get("number"),
+                    "pos": pl.get("pos", ""),
+                    "grid": pl.get("grid", "")
+                })
+            result.append({
+                "team": team.get("name", ""),
+                "logo": team.get("logo", ""),
+                "formation": formation,
+                "players": players
+            })
         return {"lineups": result}
-    except Exception as e: return JSONResponse({"error":str(e)}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/my_balance")
 async def api_balance(initData: str):
@@ -3197,34 +3263,44 @@ async def api_balance(initData: str):
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT balance,nick FROM users WHERE user_id = ?", (uid,))
     r = c.fetchone(); conn.close()
-    return {"balance":r[0] if r else 0,"nick":r[1] if r else "?"}
+    return {"balance": r[0] if r else 0, "nick": r[1] if r else "?"}
 
 @app.post("/api/bet")
 async def api_bet(req: Request):
     d = await req.json(); uid = verify_init(d.get("initData"))
-    mid = int(d.get("matchId")); comp = d.get("competition","")
-    pick = d.get("pick"); amount = int(d.get("amount",0)); coef = float(d.get("coefficient",1.0))
-    if pick not in ("home","draw","away"): return JSONResponse({"ok":False,"error":"Неверный выбор"}, status_code=400)
-    if amount < 100_000: return JSONResponse({"ok":False,"error":"Минимум 100.000"}, status_code=400)
-    # получаем названия команд
+    mid = int(d.get("matchId")); comp = d.get("competition", "")
+    pick = d.get("pick"); amount = int(d.get("amount", 0)); coef = float(d.get("coefficient", 1.0))
+    if pick not in ("home", "draw", "away"):
+        return JSONResponse({"ok": False, "error": "Неверный выбор"}, status_code=400)
+    if amount < 100_000:
+        return JSONResponse({"ok": False, "error": "Минимум 100.000"}, status_code=400)
     try:
         fx = await fb_fixture(mid)
-        resp = fx.get("response",[])
+        resp = fx.get("response", [])
         if resp:
-            t = resp[0]["teams"]; h = t["home"]["name"]; a = t["away"]["name"]
+            t = resp[0]["teams"]
+            h = t["home"]["name"]; a = t["away"]["name"]
             st = resp[0]["fixture"]["status"]["short"]
-            if st not in ("NS","TBD"): return JSONResponse({"ok":False,"error":"Ставки закрыты"}, status_code=400)
-        else: h, a = "?","?"
-    except: h, a = "?","?"
+            if st not in ("NS", "TBD"):
+                return JSONResponse({"ok": False, "error": "Ставки закрыты"}, status_code=400)
+        else:
+            h, a = "?", "?"
+    except:
+        h, a = "?", "?"
     conn = get_db_connection(); c = conn.cursor()
-    # ФИКС п.2: 1 ставка на матч
+    # ФИКС: 1 ставка на матч
     c.execute("SELECT 1 FROM football_bets WHERE user_id = ? AND fixture_id = ?", (uid, mid))
     if c.fetchone():
-        conn.close(); return JSONResponse({"ok":False,"error":"Вы уже ставили на этот матч"}, status_code=400)
+        conn.close()
+        return JSONResponse({"ok": False, "error": "Вы уже ставили на этот матч"}, status_code=400)
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     r = c.fetchone()
-    if not r: conn.close(); return JSONResponse({"ok":False,"error":"Сначала /start"}, status_code=400)
-    if r[0] < amount: conn.close(); return JSONResponse({"ok":False,"error":"Недостаточно средств"}, status_code=400)
+    if not r:
+        conn.close()
+        return JSONResponse({"ok": False, "error": "Сначала /start"}, status_code=400)
+    if r[0] < amount:
+        conn.close()
+        return JSONResponse({"ok": False, "error": "Недостаточно средств"}, status_code=400)
     c.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, uid))
     c.execute("INSERT INTO football_bets (user_id,fixture_id,competition,home_team,away_team,pick,amount,coefficient,placed_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (uid, mid, comp, h, a, pick, amount, coef, datetime.now().isoformat()))
@@ -3232,7 +3308,7 @@ async def api_bet(req: Request):
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     nb = c.fetchone()[0]; conn.close()
     lbl = "П1" if pick == "home" else "Х" if pick == "draw" else "П2"
-    return {"ok":True,"message":f"✅ Ставка {amount:,}₽ на {lbl}".replace(",","."),"balance":nb}
+    return {"ok": True, "message": f"✅ Ставка {amount:,}₽ на {lbl}".replace(",", "."), "balance": nb}
 
 @app.get("/api/my_bets")
 async def api_bets(initData: str):
@@ -3240,7 +3316,8 @@ async def api_bets(initData: str):
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT fixture_id,home_team,away_team,pick,amount,coefficient,status,payout FROM football_bets WHERE user_id = ? ORDER BY id DESC LIMIT 50", (uid,))
     rs = c.fetchall(); conn.close()
-    return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],"coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
+    return {"bets": [{"fixture_id": r[0], "home": r[1], "away": r[2], "pick": r[3],
+                      "amount": r[4], "coefficient": r[5], "status": r[6], "payout": r[7]} for r in rs]}
 
 FOOTBALL_HTML = r"""<!DOCTYPE html>
 <html lang="ru">
@@ -3255,8 +3332,8 @@ FOOTBALL_HTML = r"""<!DOCTYPE html>
 body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px}
 .header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.95);backdrop-filter:blur(20px);padding:14px 16px 10px;border-bottom:1px solid var(--border)}
 .header-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.bot-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--accent)}
 .logo{font-size:20px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.bot-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--accent)}
 .balance-pill{margin-left:auto;background:linear-gradient(135deg,rgba(0,184,122,.12),rgba(0,149,212,.08));border:1px solid rgba(0,184,122,.3);padding:6px 12px;border-radius:100px;font-size:13px;font-weight:700;color:var(--accent)}
 .tournaments{display:flex;gap:8px;overflow-x:auto;padding:0 16px 4px;scrollbar-width:none}
 .tournaments::-webkit-scrollbar{display:none}
@@ -3305,8 +3382,6 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 .modal-actions button{padding:14px;border-radius:14px;border:none;font-size:14px;font-weight:700;cursor:pointer}
 .btn-cancel{background:var(--card2);color:var(--text2)}
 .btn-confirm{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
-.field-wrap{background:#2d8a2d;border-radius:16px;padding:10px;margin:12px 0}
-.field-wrap img{width:100%;border-radius:12px;display:block}
 .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(20px);background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:12px 22px;border-radius:100px;font-size:13px;font-weight:700;opacity:0;transition:.3s;z-index:200;pointer-events:none;max-width:90%;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.error{background:var(--red)}
@@ -3383,18 +3458,21 @@ async function loadBalance(){
   }catch(e){document.getElementById("balance").textContent="NET";}
 }
 async function loadComps(){
-  try{const r=await fetch("/api/competitions");const comps=await r.json();
-  const el=document.getElementById("tournaments");el.innerHTML="";let first=true;
-  for(const [code,name] of Object.entries(comps)){
-    const b=document.createElement("button");b.textContent=name;
-    if(first){b.classList.add("active");currentComp=code;first=false;}
-    b.onclick=()=>{document.querySelectorAll("#tournaments button").forEach(x=>x.classList.remove("active"));b.classList.add("active");currentComp=code;showTab(currentTab);};
-    el.appendChild(b);
-  }}catch(e){}
+  try{
+    const r=await fetch("/api/competitions");const comps=await r.json();
+    const el=document.getElementById("tournaments");el.innerHTML="";let first=true;
+    for(const [code,name] of Object.entries(comps)){
+      const b=document.createElement("button");b.textContent=name;
+      if(first){b.classList.add("active");currentComp=code;first=false;}
+      b.onclick=()=>{document.querySelectorAll("#tournaments button").forEach(x=>x.classList.remove("active"));b.classList.add("active");currentComp=code;showTab(currentTab);};
+      el.appendChild(b);
+    }
+  }catch(e){}
 }
 async function loadMatches(){
   const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';
-  try{const r=await fetch(`/api/matches?competition=${currentComp}`);const d=await r.json();
+  try{
+    const r=await fetch(`/api/matches?competition=${currentComp}`);const d=await r.json();
     if(d.error){el.innerHTML=`<div class="error">${d.error}</div>`;return;}
     if(!d.matches||!d.matches.length){el.innerHTML='<div class="empty"><div class="empty-icon">⚽</div>Нет матчей</div>';return;}
     el.innerHTML="";d.matches.forEach(m=>el.appendChild(renderMatch(m)));
@@ -3433,7 +3511,6 @@ async function openDetail(mid){
     const hs=goals.home,as_=goals.away;
     const st=fixture.status?.short||"NS";
     const ss=(st==="FT"||st==="1H"||st==="2H"||st==="HT")&&hs!==null&&as_!==null;
-    // грузим составы
     let lineupHtml="";
     try{
       const lr=await fetch(`/api/lineup/${mid}`);const ld=await lr.json();
@@ -3494,7 +3571,8 @@ async function confirmBet(){
 }
 async function renderMyBets(){
   const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';
-  try{const r=await fetch(`/api/my_bets?initData=${encodeURIComponent(initData)}`);const d=await r.json();
+  try{
+    const r=await fetch(`/api/my_bets?initData=${encodeURIComponent(initData)}`);const d=await r.json();
     if(!d.bets||!d.bets.length){el.innerHTML='<div class="empty"><div class="empty-icon">🎯</div>У тебя нет ставок</div>';return;}
     el.innerHTML="";
     d.bets.forEach(b=>{
@@ -3522,6 +3600,9 @@ loadBalance();loadComps().then(loadMatches);
 
 @app.get("/", response_class=HTMLResponse)
 async def index(): return FOOTBALL_HTML
+
+@app.get("/health")
+async def health(): return {"status":"ok"}
 
 @app.get("/health")
 async def health(): return {"status":"ok"} # ========= ЦИКЛЫ =========
