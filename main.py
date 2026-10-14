@@ -699,7 +699,7 @@ async def send_profile(m, uid):
     await m.answer(txt, parse_mode=ParseMode.HTML,
         reply_markup=get_full_keyboard() if is_private(m) else None)
     @dp.message(Command("удалить"))
-async def del_cmd(m: Message, cmd: CommandObject):
+    async def del_cmd(m: Message, cmd: CommandObject):
     uid = m.from_user.id
     if not is_admin(uid): return
     if (cmd.args or "").strip().lower() not in ("я","me","self"):
