@@ -3167,6 +3167,10 @@ async def api_matches(competition: str = "PL"):
 async def api_match(mid: int):
     try: return await fb_fixture(mid)
     except Exception as e: return JSONResponse({"error":str(e)}, status_code=500)
+@app.get("/api/squad/{team_name}")
+async def api_squad(team_name: str):
+    sq = get_squad(team_name)
+    return {"team": team_name, "players": sq}
 
 @app.get("/api/my_balance")
 async def api_balance(initData: str):
@@ -3268,6 +3272,21 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 .modal{background:#fff;border-radius:24px 24px 0 0;padding:20px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto}
 .modal-title{font-size:16px;font-weight:700;margin-bottom:8px}
 .modal-sub{font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.5}
+.field-box{position:relative;width:100%;aspect-ratio:9/13;background:linear-gradient(#2e7d32,#1b5e20);border-radius:12px;overflow:hidden;margin-bottom:14px}
+.field-box::before{content:"";position:absolute;inset:4%;border:2px solid rgba(255,255,255,.5);border-radius:6px}
+.field-box::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:rgba(255,255,255,.5);transform:translateY(-1px)}
+.field-mid-circle{position:absolute;left:50%;top:50%;width:22%;aspect-ratio:1;border:2px solid rgba(255,255,255,.5);border-radius:50%;transform:translate(-50%,-50%)}
+.field-box-half{position:absolute;left:50%;top:50%;width:0;height:50%;border-left:2px dashed rgba(255,255,255,.35)}
+.player{position:absolute;transform:translate(-50%,-50%);text-align:center;width:56px}
+.player-circle{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);margin:0 auto}
+.player-circle.home{background:#e53935}
+.player-circle.away{background:#1e88e5}
+.player-name{font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,.6);padding:1px 4px;border-radius:4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56px;line-height:1.1}
+.field-legend{display:flex;justify-content:center;gap:20px;margin-bottom:14px;font-size:12px}
+.field-legend span{display:flex;align-items:center;gap:6px}
+.field-legend .dot{width:12px;height:12px;border-radius:50%}
+.field-legend .dot.home{background:#e53935}
+.field-legend .dot.away{background:#1e88e5}
 .amount-input{width:100%;background:var(--card2);border:1.5px solid var(--border);color:var(--text);padding:14px;border-radius:14px;font-size:18px;font-weight:700;outline:none;margin-bottom:12px}
 .quick-amounts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px}
 .quick-amounts button{background:var(--card2);border:1px solid var(--border);color:var(--text2);padding:8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer}
@@ -3301,6 +3320,13 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 <button id="tab-bets" onclick="showTab('bets')">🎯 Мои ставки</button>
 </div>
 <div id="content"><div class="loading">Загрузка...</div></div>
+
+<div class="modal-bg" id="detailModal"><div class="modal">
+<div class="modal-title" id="detailTitle">Матч</div>
+<div id="detailContent"></div>
+<div style="margin-top:16px"><button class="btn-cancel" style="width:100%;padding:14px;border-radius:14px;border:none;font-weight:700" onclick="closeDetail()">Закрыть</button></div>
+</div></div>
+
 <div class="modal-bg" id="betModal"><div class="modal">
 <div class="modal-title" id="modalTitle">Ставка</div>
 <div class="modal-sub" id="modalInfo"></div>
@@ -3317,11 +3343,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 <button class="btn-confirm" onclick="confirmBet()">Поставить</button>
 </div>
 </div></div>
-<div class="modal-bg" id="detailModal"><div class="modal">
-<div class="modal-title" id="detailTitle">Матч</div>
-<div id="detailContent" style="font-size:13px;line-height:1.8;color:var(--text2)"></div>
-<div style="margin-top:16px"><button class="btn-cancel" style="width:100%;padding:14px;border-radius:14px;border:none;font-weight:700" onclick="closeDetail()">Закрыть</button></div>
-</div></div>
+
 <div class="toast" id="toast"></div>
 <div class="bottom-nav" id="bottom-nav">
 <button class="active" data-tab="matches" onclick="showTab('matches')"><span class="icon">⚽</span>Матчи</button>
@@ -3395,6 +3417,23 @@ function renderMatch(m){
   c.querySelectorAll(".odds button").forEach(b=>{if(b.disabled)return;b.onclick=(e)=>{e.stopPropagation();openBet(m,b.dataset.p,o[b.dataset.p]);};});
   return c;
 }
+function drawField(homeSquad, awaySquad, homeName, awayName){
+  let html='<div class="field-legend"><span><span class="dot home"></span>'+homeName+'</span><span><span class="dot away"></span>'+awayName+'</span></div>';
+  html+='<div class="field-box"><div class="field-mid-circle"></div>';
+  // поле рисуется: y=0 вверху (атака home), y=1 внизу
+  homeSquad.forEach(p=>{
+    const left=(p.x*100).toFixed(1)+"%";
+    const top=((p.y)*100*0.5+5).toFixed(1)+"%";
+    html+='<div class="player" style="left:'+left+';top:'+top+';"><div class="player-circle home">'+p.p+'</div><div class="player-name">'+p.n+'</div></div>';
+  });
+  awaySquad.forEach(p=>{
+    const left=(p.x*100).toFixed(1)+"%";
+    const top=((1-p.y)*100*0.5+45).toFixed(1)+"%";
+    html+='<div class="player" style="left:'+left+';top:'+top+';"><div class="player-circle away">'+p.p+'</div><div class="player-name">'+p.n+'</div></div>';
+  });
+  html+='</div>';
+  return html;
+}
 async function openDetail(mid){
   document.getElementById("detailTitle").textContent="Загрузка...";
   document.getElementById("detailContent").innerHTML="";
@@ -3405,20 +3444,32 @@ async function openDetail(mid){
     const h=m.homeTeam||{},a=m.awayTeam||{};
     const hs=m.score?.fullTime?.home,as_=m.score?.fullTime?.away;
     const lv=isLive(m),fn=isFinished(m);const ss=(lv||fn)&&hs!==null&&as_!==null;
-    let html='<div style="text-align:center;margin-bottom:16px">'+
+    // грузим составы
+    let homeSquad=[], awaySquad=[];
+    try{
+      const hr=await fetch("/api/squad/"+encodeURIComponent(h.shortName||h.name||""));
+      const hd=await hr.json(); homeSquad=hd.players||[];
+      const ar=await fetch("/api/squad/"+encodeURIComponent(a.shortName||a.name||""));
+      const ad=await ar.json(); awaySquad=ad.players||[];
+    }catch(e){}
+    let html='<div style="text-align:center;margin-bottom:14px">'+
       '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">'+(m.competition?.name||"")+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px">'+
-        '<div style="text-align:center;flex:1"><img src="'+(h.crest||"")+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(h.shortName||h.name||"")+'</div></div>'+
-        '<div style="font-size:24px;font-weight:800">'+(ss?hs+":"+as_:"VS")+'</div>'+
-        '<div style="text-align:center;flex:1"><img src="'+(a.crest||"")+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(a.shortName||a.name||"")+'</div></div>'+
+        '<div style="text-align:center;flex:1"><img src="'+(h.crest||"")+'" style="width:44px;height:44px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(h.shortName||h.name||"")+'</div></div>'+
+        '<div style="font-size:22px;font-weight:800">'+(ss?hs+":"+as_:"VS")+'</div>'+
+        '<div style="text-align:center;flex:1"><img src="'+(a.crest||"")+'" style="width:44px;height:44px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(a.shortName||a.name||"")+'</div></div>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--text2)">'+(lv?'🔴 LIVE '+(m.minute||"")+"'":fn?'✓ Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate))+'</div>'+
-    '</div>'+
-    '<div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px">'+
+      '<div style="font-size:11px;color:var(--text2);margin-bottom:6px">'+(lv?'🔴 LIVE '+(m.minute||"")+"'":fn?'✓ Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate))+'</div>'+
+    '</div>';
+    // рисуем поле
+    if(homeSquad.length && awaySquad.length){
+      html += drawField(homeSquad, awaySquad, h.shortName||h.name||"Дом", a.shortName||a.name||"Гости");
+    }
+    html += '<div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px;margin-bottom:14px">'+
       '<div>Стадион: <b>'+(m.venue||"—")+'</b></div>'+
       '<div>Тур: <b>'+(m.matchday?("День "+m.matchday):"—")+'</b></div>'+
     '</div>';
-    document.getElementById("detailTitle").textContent="Матч #"+mid;
+    document.getElementById("detailTitle").textContent=(h.shortName||h.name||"")+" — "+(a.shortName||a.name||"");
     document.getElementById("detailContent").innerHTML=html;
   }catch(e){document.getElementById("detailContent").innerHTML='<div class="error">'+e.message+'</div>';}
 }
