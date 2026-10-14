@@ -3063,103 +3063,70 @@ async def adm_cmd(m: Message):
 💾 /бэкап""", parse_mode=ParseMode.HTML)
 
 COMPETITIONS_FOOTBALL = {
-    "39":"🏴 Premier League","140":"🇪🇸 La Liga","78":"🇩🇪 Bundesliga",
-    "135":"🇮🇹 Serie A","61":"🇫🇷 Ligue 1","235":"🇷🇺 РПЛ","203":"🇹🇷 Süper Lig",
-    "2":"🏆 Champions League","3":"🏆 Europa League","848":"🏆 Conference League",
-    "88":"🇳🇱 Eredivisie","94":"🇵🇹 Primeira Liga","144":"🇧🇪 Jupiler Pro League",
-    "71":"🇧🇷 Brasileirão","128":"🇦🇷 Liga Profesional","253":"🇺🇸 MLS","292":"🇸🇦 Saudi Pro League"}
+    "PL":"🏴 Premier League","PD":"🇪🇸 La Liga","BL1":"🇩🇪 Bundesliga",
+    "SA":"🇮🇹 Serie A","FL1":"🇫🇷 Ligue 1","DED":"🇳🇱 Eredivisie",
+    "PPL":"🇵🇹 Primeira Liga","ELC":"🏴 Championship","CL":"🏆 Champions League",
+    "BSA":"🇧🇷 Brasileirão"}
 
 _fb_cache = {}; FB_TTL = 60
 
 async def fb_get(path, params=None):
-    if not API_FOOTBALL_KEY:
-        raise Exception("API_FOOTBALL_KEY не задан")
     key = f"{path}?{params}"; now = datetime.now()
     if key in _fb_cache:
         data, ts = _fb_cache[key]
         if (now-ts).total_seconds() < FB_TTL: return data
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(f"{API_FOOTBALL_BASE}{path}",
-            headers={"x-apisports-key": API_FOOTBALL_KEY}, params=params or {})
-        if r.status_code == 429: raise Exception("Лимит API (100/день)")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{FOOTBALL_BASE}{path}",
+            headers={"X-Auth-Token": FOOTBALL_API_KEY},
+            params=params or {})
+        if r.status_code == 429: raise Exception("Лимит API (10 запросов/мин)")
         if r.status_code == 403: raise Exception("Доступ запрещён")
         if r.status_code == 404: raise Exception("Не найдено")
         r.raise_for_status(); data = r.json()
-        errors = data.get("errors")
-        if errors:
-            if isinstance(errors, dict) and errors:
-                msg = ", ".join(f"{k}:{v}" for k, v in errors.items())
-                if msg: raise Exception(msg)
-            elif isinstance(errors, list) and errors:
-                raise Exception(str(errors))
     _fb_cache[key] = (data, now); return data
 
-async def fb_fixtures_by_date(league_id, date_str):
-    return await fb_get("/fixtures", {"league": league_id, "date": date_str})
-
-async def fb_fixtures_next(league_id, next_n=15):
-    return await fb_get("/fixtures", {"league": league_id, "next": next_n})
-
 async def fb_matches(comp):
-    """Пробует сезоны 2025, 2024, 2026 по очереди."""
-    matches = []
-    today = datetime.utcnow().date()
-    # сначала пробуем даты по 3 дня вперёд без сезона
-    for off in [0, 1, 2]:
-        d = today + timedelta(days=off)
-        try:
-            data = await fb_get("/fixtures", {"league": comp, "date": d.isoformat()})
-            got = data.get("response", [])
-            print(f"[FB] {comp} {d}: {len(got)}", flush=True)
-            matches.extend(got)
-            if len(matches) >= 15: break
-        except Exception as e:
-            print(f"[FB] {comp} {d} ERR: {e}", flush=True)
-    # если пусто — пробуем next=15 без сезона
-    if not matches:
-        try:
-            data = await fb_get("/fixtures", {"league": comp, "next": 15})
-            got = data.get("response", [])
-            print(f"[FB] {comp} next: {len(got)}", flush=True)
-            matches.extend(got)
-        except Exception as e:
-            print(f"[FB] {comp} next ERR: {e}", flush=True)
-    # если всё ещё пусто — пробуем сезоны по очереди
-    if not matches:
-        for season in [2025, 2024, 2026]:
-            try:
-                data = await fb_get("/fixtures", {"league": comp, "season": season})
-                got = data.get("response", [])
-                print(f"[FB] {comp} s{season}: {len(got)}", flush=True)
-                if got:
-                    matches.extend(got)
-                    break
-            except Exception as e:
-                print(f"[FB] {comp} s{season} ERR: {e}", flush=True)
-    return matches[:40]
+    data = await fb_get(f"/competitions/{comp}/matches", {"status":"SCHEDULED,LIVE,IN_PLAY,PAUSED,FINISHED"})
+    ms = data.get("matches",[]); now = datetime.utcnow()
+    today = now.date(); tomorrow = today + timedelta(days=1)
+    live = []; today_ms = []; tomorrow_ms = []; future_ms = []
+    for m in ms:
+        try: utc = datetime.fromisoformat(m["utcDate"].replace("Z","+00:00")).replace(tzinfo=None)
+        except: continue
+        st = m.get("status","")
+        if st in ("LIVE","IN_PLAY","PAUSED"): live.append((utc, m))
+        elif utc.date() == today: today_ms.append((utc, m))
+        elif utc.date() == tomorrow: tomorrow_ms.append((utc, m))
+        elif utc.date() > tomorrow: future_ms.append((utc, m))
+    live.sort(key=lambda x: x[0]); today_ms.sort(key=lambda x: x[0])
+    tomorrow_ms.sort(key=lambda x: x[0]); future_ms.sort(key=lambda x: x[0])
+    if live or today_ms:
+        return [m for _,m in live] + [m for _,m in today_ms]
+    elif tomorrow_ms:
+        return [m for _,m in tomorrow_ms]
+    else:
+        return [m for _,m in future_ms][:40]
 
 async def fb_fixture(fid):
-    return await fb_get("/fixtures", {"id": fid})
+    return await fb_get(f"/matches/{fid}")
 
 async def fb_standings(comp):
-    try: return await fb_get("/standings", {"league": comp})
-    except: return {"response": []}
+    try: return await fb_get(f"/competitions/{comp}/standings")
+    except: return {"standings":[]}
 
-def calc_odds(home_id, away_id, st):
+def calc_odds(hid, aid, st):
     def rk(tid):
-        try:
-            for blk in st.get("response", []):
-                for grp in blk.get("league", {}).get("standings", []):
-                    for row in grp:
-                        if row["team"]["id"] == tid: return row["rank"]
-        except: pass
+        for t in st.get("standings",[]):
+            if t.get("type") != "TOTAL": continue
+            for row in t.get("table",[]):
+                if row["team"]["id"] == tid: return row["position"]
         return 10
-    hp = rk(home_id); ap = rk(away_id); diff = (ap-hp)/10.0
+    hp = rk(hid); ap = rk(aid); diff = (ap-hp)/10.0
     h = max(0.10, min(0.75, 0.40+0.25*diff))
     a = max(0.10, min(0.75, 0.40-0.25*diff))
     d = max(0.15, 1-h-a); tot = h+a+d; h/=tot; a/=tot; d/=tot; mg = 1.10
     return {"home":round(1/h*mg,2),"draw":round(1/d*mg,2),"away":round(1/a*mg,2),
-        "favorite":"home" if h>a else "away","home_chance":round(h*100,1),
+        "favorite":"home" if h > a else "away","home_chance":round(h*100,1),
         "draw_chance":round(d*100,1),"away_chance":round(a*100,1)}
 
 def verify_init(init):
@@ -3173,63 +3140,31 @@ def verify_init(init):
 async def api_comps(): return COMPETITIONS_FOOTBALL
 
 @app.get("/api/matches")
-async def api_matches(competition: str = "39"):
+async def api_matches(competition: str = "PL"):
     try:
-        ms = await fb_matches(competition)
-        st = await fb_standings(competition)
+        ms = await fb_matches(competition); st = await fb_standings(competition)
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error":str(e)}, status_code=500)
     res = []
     for m in ms:
         try:
-            fx = m["fixture"]; tm = m["teams"]; gl = m.get("goals", {}); lg = m.get("league", {})
-            ss = fx.get("status", {}).get("short", "NS")
-            smap = {"NS":"SCHEDULED","TBD":"SCHEDULED","1H":"IN_PLAY","HT":"PAUSED","2H":"IN_PLAY",
-                "ET":"IN_PLAY","P":"IN_PLAY","FT":"FINISHED","AET":"FINISHED","PEN":"FINISHED",
-                "SUSP":"PAUSED","INT":"PAUSED","PST":"POSTPONED","CANC":"CANCELLED",
-                "ABD":"CANCELLED","AWD":"FINISHED","WO":"FINISHED","LIVE":"IN_PLAY"}
-            status = smap.get(ss, "SCHEDULED")
-            odds = calc_odds(tm["home"]["id"], tm["away"]["id"], st)
-            res.append({"id": fx["id"], "competition": lg.get("name",""),
-                "utcDate": fx["date"], "status": status,
-                "minute": fx.get("status",{}).get("elapsed"),
-                "home": {"id": tm["home"]["id"], "name": tm["home"]["name"], "crest": tm["home"].get("logo","")},
-                "away": {"id": tm["away"]["id"], "name": tm["away"]["name"], "crest": tm["away"].get("logo","")},
-                "score": {"home": gl.get("home"), "away": gl.get("away")},
-                "odds": odds})
+            h = m["homeTeam"]; a = m["awayTeam"]
+            odds = calc_odds(h["id"], a["id"], st)
+            res.append({"id":m["id"],"competition":m.get("competition",{}).get("name",""),
+                "utcDate":m["utcDate"],"status":m["status"],"minute":m.get("minute"),
+                "home":{"id":h["id"],"name":h.get("shortName") or h.get("name"),"crest":h.get("crest","")},
+                "away":{"id":a["id"],"name":a.get("shortName") or a.get("name"),"crest":a.get("crest","")},
+                "score":{"home":m.get("score",{}).get("fullTime",{}).get("home"),
+                         "away":m.get("score",{}).get("fullTime",{}).get("away")},
+                "odds":odds})
         except Exception as e:
-            print(f"parse: {e}"); continue
-    return {"matches": res}
+            print(f"parse match: {e}"); continue
+    return {"matches":res}
 
 @app.get("/api/match/{mid}")
 async def api_match(mid: int):
-    try:
-        d = await fb_fixture(mid)
-        resp = d.get("response", [])
-        if not resp: raise Exception("Матч не найден")
-        return resp[0]
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/api/lineup/{mid}")
-async def api_lineup(mid: int):
-    try:
-        d = await fb_get("/fixtures/lineups", {"fixture": mid})
-        resp = d.get("response", [])
-        result = []
-        for td in resp:
-            team = td.get("team", {})
-            start = td.get("startXI", [])
-            pls = []
-            for p in start:
-                pl = p.get("player", {})
-                pls.append({"name": pl.get("name","?"), "number": pl.get("number"),
-                            "pos": pl.get("pos",""), "grid": pl.get("grid","")})
-            result.append({"team": team.get("name",""), "logo": team.get("logo",""),
-                           "formation": td.get("formation",""), "players": pls})
-        return {"lineups": result}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    try: return await fb_fixture(mid)
+    except Exception as e: return JSONResponse({"error":str(e)}, status_code=500)
 
 @app.get("/api/my_balance")
 async def api_balance(initData: str):
@@ -3237,25 +3172,21 @@ async def api_balance(initData: str):
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT balance,nick FROM users WHERE user_id = ?", (uid,))
     r = c.fetchone(); conn.close()
-    return {"balance": r[0] if r else 0, "nick": r[1] if r else "?"}
+    return {"balance":r[0] if r else 0,"nick":r[1] if r else "?"}
 
 @app.post("/api/bet")
 async def api_bet(req: Request):
     d = await req.json(); uid = verify_init(d.get("initData"))
     mid = int(d.get("matchId")); comp = d.get("competition","")
     pick = d.get("pick"); amount = int(d.get("amount",0)); coef = float(d.get("coefficient",1.0))
-    if pick not in ("home","draw","away"):
-        return JSONResponse({"ok":False,"error":"Неверный выбор"}, status_code=400)
-    if amount < 100_000:
-        return JSONResponse({"ok":False,"error":"Минимум 100.000"}, status_code=400)
+    if pick not in ("home","draw","away"): return JSONResponse({"ok":False,"error":"Неверный выбор"}, status_code=400)
+    if amount < 100_000: return JSONResponse({"ok":False,"error":"Минимум 100.000"}, status_code=400)
     try:
-        fx = await fb_fixture(mid); resp = fx.get("response", [])
-        if resp:
-            t = resp[0]["teams"]; h = t["home"]["name"]; a = t["away"]["name"]
-            st = resp[0]["fixture"]["status"]["short"]
-            if st not in ("NS","TBD"):
-                return JSONResponse({"ok":False,"error":"Ставки закрыты"}, status_code=400)
-        else: h, a = "?","?"
+        m = await fb_fixture(mid)
+        st = m.get("status","SCHEDULED")
+        if st not in ("SCHEDULED","TIMED"): return JSONResponse({"ok":False,"error":"Ставки закрыты"}, status_code=400)
+        h = m["homeTeam"].get("shortName") or m["homeTeam"].get("name")
+        a = m["awayTeam"].get("shortName") or m["awayTeam"].get("name")
     except: h, a = "?","?"
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT 1 FROM football_bets WHERE user_id = ? AND fixture_id = ?", (uid, mid))
@@ -3264,7 +3195,7 @@ async def api_bet(req: Request):
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     r = c.fetchone()
     if not r: conn.close(); return JSONResponse({"ok":False,"error":"Сначала /start"}, status_code=400)
-    if r[0] < amount: conn.close(); return JSONResponse({"ok":False,"error":"Недостаточно"}, status_code=400)
+    if r[0] < amount: conn.close(); return JSONResponse({"ok":False,"error":"Недостаточно средств"}, status_code=400)
     c.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, uid))
     c.execute("INSERT INTO football_bets (user_id,fixture_id,competition,home_team,away_team,pick,amount,coefficient,placed_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (uid, mid, comp, h, a, pick, amount, coef, datetime.now().isoformat()))
@@ -3272,7 +3203,7 @@ async def api_bet(req: Request):
     c.execute("SELECT balance FROM users WHERE user_id = ?", (uid,))
     nb = c.fetchone()[0]; conn.close()
     lbl = "П1" if pick == "home" else "Х" if pick == "draw" else "П2"
-    return {"ok":True, "message":f"✅ Ставка {amount:,}₽ на {lbl}".replace(",","."), "balance":nb}
+    return {"ok":True,"message":f"✅ Ставка {amount:,}₽ на {lbl}".replace(",","."),"balance":nb}
 
 @app.get("/api/my_bets")
 async def api_bets(initData: str):
@@ -3280,8 +3211,7 @@ async def api_bets(initData: str):
     conn = get_db_connection(); c = conn.cursor()
     c.execute("SELECT fixture_id,home_team,away_team,pick,amount,coefficient,status,payout FROM football_bets WHERE user_id = ? ORDER BY id DESC LIMIT 50", (uid,))
     rs = c.fetchall(); conn.close()
-    return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],
-                     "coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
+    return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],"coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
 
 FOOTBALL_HTML = r"""<!DOCTYPE html>
 <html lang="ru">
@@ -3398,7 +3328,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px
 <script>
 const tg = window.Telegram.WebApp; tg.expand(); tg.ready();
 const initData = tg.initData || "";
-let currentComp = "39", currentTab = "matches", currentMatch = null, currentPick = null, currentCoef = 0, balance = 0;
+let currentComp = "PL", currentTab = "matches", currentMatch = null, currentPick = null, currentCoef = 0, balance = 0;
 function fmtBalance(n){return "₽"+Number(n).toLocaleString("ru-RU").replace(/,/g,".");}
 function toast(msg,err){const t=document.getElementById("toast");t.textContent=msg;t.className="toast show"+(err?" error":"");setTimeout(()=>t.className="toast",2500);}
 function fmtTime(iso){try{return new Date(iso).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});}catch(e){return "--:--";}}
@@ -3470,38 +3400,22 @@ async function openDetail(mid){
   try{
     const r=await fetch("/api/match/"+mid);const m=await r.json();
     if(m.error){document.getElementById("detailContent").innerHTML='<div class="error">'+m.error+'</div>';return;}
-    const fx=m.fixture||{},tm=m.teams||{},gl=m.goals||{},lg=m.league||{};
-    const hn=tm.home?.name||"",an=tm.away?.name||"";
-    const hl=tm.home?.logo||"",al=tm.away?.logo||"";
-    const hs=gl.home,as_=gl.away;
-    const st=fx.status?.short||"NS";
-    const ss=(st==="FT"||st==="1H"||st==="2H"||st==="HT")&&hs!==null&&as_!==null;
-    let lineupHtml="";
-    try{
-      const lr=await fetch("/api/lineup/"+mid);const ld=await lr.json();
-      if(ld.lineups && ld.lineups.length>=1){
-        lineupHtml='<div style="margin-top:14px;background:var(--card2);border-radius:12px;padding:12px;font-size:12px"><div style="font-weight:700;margin-bottom:8px">📋 Составы</div>';
-        for(const tm2 of ld.lineups){
-          lineupHtml+='<div style="margin-bottom:10px"><b>'+tm2.team+'</b> ('+(tm2.formation||"?")+')<br>';
-          lineupHtml+=tm2.players.map(p=>(p.number||"")+" "+p.name).join(" • ");
-          lineupHtml+='</div>';
-        }
-        lineupHtml+='</div>';
-      }
-    }catch(e){}
+    const h=m.homeTeam||{},a=m.awayTeam||{};
+    const hs=m.score?.fullTime?.home,as_=m.score?.fullTime?.away;
+    const lv=isLive(m),fn=isFinished(m);const ss=(lv||fn)&&hs!==null&&as_!==null;
     let html='<div style="text-align:center;margin-bottom:16px">'+
-      '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">'+(lg.name||"")+'</div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">'+(m.competition?.name||"")+'</div>'+
       '<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px">'+
-        '<div style="text-align:center;flex:1"><img src="'+hl+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+hn+'</div></div>'+
+        '<div style="text-align:center;flex:1"><img src="'+(h.crest||"")+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(h.shortName||h.name||"")+'</div></div>'+
         '<div style="font-size:24px;font-weight:800">'+(ss?hs+":"+as_:"VS")+'</div>'+
-        '<div style="text-align:center;flex:1"><img src="'+al+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+an+'</div></div>'+
+        '<div style="text-align:center;flex:1"><img src="'+(a.crest||"")+'" style="width:48px;height:48px;object-fit:contain"><div style="font-size:12px;font-weight:700;margin-top:4px">'+(a.shortName||a.name||"")+'</div></div>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--text2)">'+(st==="1H"||st==="2H"||st==="HT"?'🔴 LIVE':st==="FT"?'✓ Завершён':fmtDate(fx.date)+" "+fmtTime(fx.date))+'</div>'+
+      '<div style="font-size:11px;color:var(--text2)">'+(lv?'🔴 LIVE '+(m.minute||"")+"'":fn?'✓ Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate))+'</div>'+
     '</div>'+
     '<div style="background:var(--card2);border-radius:12px;padding:12px;font-size:12px">'+
-      '<div>Стадион: <b>'+(fx.venue?.name||"—")+'</b></div>'+
-      '<div>Город: <b>'+(fx.venue?.city||"—")+'</b></div>'+
-    '</div>'+lineupHtml;
+      '<div>Стадион: <b>'+(m.venue||"—")+'</b></div>'+
+      '<div>Тур: <b>'+(m.matchday?("День "+m.matchday):"—")+'</b></div>'+
+    '</div>';
     document.getElementById("detailTitle").textContent="Матч #"+mid;
     document.getElementById("detailContent").innerHTML=html;
   }catch(e){document.getElementById("detailContent").innerHTML='<div class="error">'+e.message+'</div>';}
@@ -3567,7 +3481,8 @@ async def index(): return FOOTBALL_HTML
 
 @app.get("/health")
 async def health(): return {"status":"ok"}
-     # ========= ЦИКЛЫ =========
+
+# ========= ЦИКЛЫ =========
 async def top3_loop():
     while True:
         try:
@@ -3637,17 +3552,15 @@ async def football_result_loop():
             ids = [r[0] for r in c.fetchall()]; conn.close()
             for fid in ids:
                 try:
-                    d = await fb_fixture(fid); resp = d.get("response", [])
-                    if not resp: continue
-                    m = resp[0]
+                    m = await fb_fixture(fid)
                 except: continue
-                st = m["fixture"]["status"]["short"]
-                if st not in ("FT","AET","PEN","AWD","WO"): continue
-                g = m.get("goals", {})
+                if m.get("status") != "FINISHED": continue
+                g = m.get("score",{}).get("fullTime",{})
                 hs = g.get("home"); as_ = g.get("away")
                 if hs is None or as_ is None: continue
                 res = "home" if hs > as_ else "away" if hs < as_ else "draw"
-                hn = m["teams"]["home"]["name"]; an = m["teams"]["away"]["name"]
+                hn = m["homeTeam"].get("shortName") or m["homeTeam"].get("name","?")
+                an = m["awayTeam"].get("shortName") or m["awayTeam"].get("name","?")
                 conn = get_db_connection(); c = conn.cursor()
                 c.execute("SELECT id,user_id,pick,amount,coefficient FROM football_bets WHERE fixture_id = ? AND status = 'pending'", (fid,))
                 for bid, uid, pick, amount, coef in c.fetchall():
@@ -3677,10 +3590,8 @@ async def football_reminder_loop():
             now = datetime.utcnow()
             for bid, uid, fid, home, away, pick, amount in bets:
                 try:
-                    d = await fb_fixture(fid); resp = d.get("response", [])
-                    if not resp: continue
-                    utc_str = resp[0]["fixture"]["date"]
-                    utc = datetime.fromisoformat(utc_str.replace("Z","+00:00")).replace(tzinfo=None)
+                    m = await fb_fixture(fid)
+                    utc = datetime.fromisoformat(m["utcDate"].replace("Z","+00:00")).replace(tzinfo=None)
                     diff = (utc - now).total_seconds() / 60.0
                     if 12 <= diff <= 18:
                         lbl = "П1" if pick == "home" else "Х" if pick == "draw" else "П2"
