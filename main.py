@@ -2085,7 +2085,7 @@ async def create_check_cmd(m: Message):
     c.execute("INSERT INTO checks (check_id,amount,activations_left,total_activations,creator_id,created_at) VALUES (?,?,?,?,?,?)", (cid, amount, ac, ac, m.from_user.id, datetime.now().isoformat()))
     conn.commit(); conn.close()
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💰 Активировать", url=f"https://t.me/{BOT_USERNAME}?start={cid}")]])
-    text = f"🧾 НОВЫЙ ЧЕК!\n\n💰 {format_balance(amount)}\n🎟️ Активаций: {ac}}
+    text = f"🧾 НОВЫЙ ЧЕК!\n\n💰 {format_balance(amount)}\n🎟️ Активаций: {ac}
         try:
         await bot.send_message(f"@{CHANNEL_USERNAME}", text, parse_mode=ParseMode.HTML, reply_markup=kb)
         await m.answer("✅ Чек опубликован!")
