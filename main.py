@@ -2093,8 +2093,7 @@ async def create_check_cmd(m: Message):
 
 
 transfer_words = ["кинуть","дать","передать","скинуть","перевести"]
-    
-     async def find_user(ident):
+async def find_user(ident):
     ident = ident.strip().lstrip('@').lower()
     if not ident: return None
     conn = get_db_connection(); c = conn.cursor()
