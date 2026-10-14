@@ -29,6 +29,8 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://football-bot-40g0.onrender.com")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY", "")
 API_FOOTBALL_HOST = "v3.football.api-sports.io"
 API_FOOTBALL_BASE = f"https://{API_FOOTBALL_HOST}"
+FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "6caa83b5d7af4e5ca1a3949b244bd68b")
+FOOTBALL_BASE = "https://api.football-data.org/v4"
 
 DB_PATH = os.getenv("DB_PATH", "/data/roulette_bot.db")
 try:
