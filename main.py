@@ -2792,8 +2792,7 @@ async def api_bets(initData: str):
     return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],"coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    return FOOTBALL_HTML
+async def index(): return "<html><body><h1>Bot is running</h1></body></html>"
 
 @app.get("/health")
 async def health(): return {"status":"ok"}
