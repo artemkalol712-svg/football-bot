@@ -2645,6 +2645,23 @@ async def adm_cmd(m: Message):
 • /удалить_дом [номер]""", parse_mode=ParseMode.HTML)
 
 # ==================== MINI APP ====================
+FOOTBALL_HTML = r"""
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>⚽ Ставки</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+...
+</style>
+</head>
+<body>
+...
+</body>
+</html>
+"""
 COMPETITIONS_FOOTBALL = {
     "PL":"🏴 Premier League","PD":"🇪🇸 La Liga","BL1":"🇩🇪 Bundesliga",
     "SA":"🇮🇹 Serie A","FL1":"🇫🇷 Ligue 1","DED":"🇳🇱 Eredivisie",
