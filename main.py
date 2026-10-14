@@ -292,8 +292,12 @@ class TopPhotoState(StatesGroup):
     waiting_balance = State()
     waiting_ref = State()
 
-opPhotoStateateatesGroup):
-    waiting_balance = State(); waiting_ref = State()
+class TopPhotoState(StatesGroup):
+    waiting_balance = State()
+    waiting_ref = State()
+
+@dp.message(Command("start"))
+async def cmd_start(m: Message, state: FSMContext):
   
 @dp.message(Command("start"))
 async def cmd_start(m: Message, state: FSMContext):
