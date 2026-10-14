@@ -2783,3 +2783,187 @@ async def api_bets(initData: str):
     c.execute("SELECT fixture_id,home_team,away_team,pick,amount,coefficient,status,payout FROM football_bets WHERE user_id = ? ORDER BY id DESC LIMIT 50", (uid,))
     rs = c.fetchall(); conn.close()
     return {"bets":[{"fixture_id":r[0],"home":r[1],"away":r[2],"pick":r[3],"amount":r[4],"coefficient":r[5],"status":r[6],"payout":r[7]} for r in rs]}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>⚽ Ставки</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;font-family:-apple-system,sans-serif}
+:root{--bg:#0a0e14;--card:#161d29;--card2:#1c2534;--border:#232e3f;--text:#eaf0ff;--text2:#7d8ba0;--accent:#00e0a4;--accent2:#00b8ff;--gold:#ffb800;--red:#ff3b5c}
+body{background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px;background-image:radial-gradient(circle at 0% 0%,rgba(0,224,164,.08),transparent 40%),radial-gradient(circle at 100% 100%,rgba(0,184,255,.06),transparent 40%);background-attachment:fixed}
+.header{position:sticky;top:0;z-index:50;background:rgba(10,14,20,.85);backdrop-filter:blur(20px);padding:14px 16px 10px;border-bottom:1px solid rgba(35,46,63,.6)}
+.header-top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.logo{font-size:20px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.balance-pill{margin-left:auto;background:linear-gradient(135deg,rgba(0,224,164,.15),rgba(0,184,255,.1));border:1px solid rgba(0,224,164,.3);padding:6px 12px;border-radius:100px;font-size:13px;font-weight:700;color:var(--accent)}
+.tournaments-wrap{margin:0 -16px;overflow:hidden}
+.tournaments{display:flex;gap:8px;overflow-x:auto;padding:0 16px 4px;scrollbar-width:none}
+.tournaments::-webkit-scrollbar{display:none}
+.tournaments button{flex-shrink:0;background:rgba(35,46,63,.5);border:1px solid transparent;color:var(--text2);padding:8px 14px;border-radius:100px;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
+.tournaments button.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0a0e14}
+.tabs{display:flex;gap:6px;padding:12px 16px 4px}
+.tabs button{flex:1;background:transparent;border:none;color:var(--text2);padding:10px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent}
+.tabs button.active{color:var(--text);border-bottom-color:var(--accent)}
+#content{padding:12px 16px 20px}
+.match{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:20px;padding:14px;margin-bottom:14px;cursor:pointer;animation:slideIn .3s ease-out}
+@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.match-top{display:flex;justify-content:space-between;margin-bottom:14px;font-size:11px;color:var(--text2)}
+.status-live{color:var(--red);font-weight:700}
+.status-sched{color:var(--accent2);font-weight:700}
+.teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;margin-bottom:16px}
+.team{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;min-width:0}
+.team-logo-wrap{width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.03);border-radius:50%;border:2px solid var(--border);position:relative}
+.team.fav .team-logo-wrap{border-color:var(--gold);box-shadow:0 0 20px rgba(255,184,0,.25)}
+.team-logo-wrap img{width:40px;height:40px;object-fit:contain}
+.team-name{font-size:12px;font-weight:700;line-height:1.15}
+.score{font-size:26px;font-weight:800;min-width:60px;text-align:center}
+.score.vs{font-size:18px;color:var(--text2)}
+.odds{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.odds button{background:rgba(35,46,63,.6);border:1.5px solid var(--border);color:var(--text);padding:10px 6px;border-radius:14px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.odds button:disabled{opacity:.4}
+.odds button.fav{border-color:rgba(255,184,0,.4);background:rgba(255,184,0,.08)}
+.odds-label-pick{font-size:10px;color:var(--text2);font-weight:600}
+.odds-coef{font-size:16px;font-weight:800;color:var(--accent)}
+.odds button.fav .odds-coef{color:var(--gold)}
+.odds-chance{font-size:9px;color:var(--text2)}
+.odds-lock{font-size:10px;color:var(--red);font-weight:700}
+.loading{text-align:center;padding:60px 20px;color:var(--text2)}
+.loading::before{content:"";display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error{color:var(--red);text-align:center;padding:20px;background:rgba(255,59,92,.06);border-radius:14px}
+.empty{text-align:center;padding:60px 20px;color:var(--text2)}
+.empty-icon{font-size:48px;margin-bottom:10px;opacity:.5}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:100;align-items:flex-end;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:linear-gradient(180deg,var(--card2),var(--card));border-radius:24px 24px 0 0;padding:20px;width:100%;max-width:500px;animation:slideUp .3s cubic-bezier(.2,.9,.3,1)}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal::before{content:"";display:block;width:40px;height:4px;background:var(--border);border-radius:100px;margin:0 auto 16px}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:8px}
+.modal-sub{font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.5}
+.amount-input{width:100%;background:rgba(10,14,20,.6);border:1.5px solid var(--border);color:var(--text);padding:14px;border-radius:14px;font-size:18px;font-weight:700;outline:none;margin-bottom:12px}
+.quick-amounts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px}
+.quick-amounts button{background:rgba(35,46,63,.5);border:1px solid var(--border);color:var(--text2);padding:8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer}
+.payout-preview{display:flex;justify-content:space-between;background:rgba(0,224,164,.06);border:1px solid rgba(0,224,164,.2);border-radius:12px;padding:12px;margin-bottom:16px}
+.payout-preview .label{font-size:11px;color:var(--text2);text-transform:uppercase}
+.payout-preview .value{font-size:16px;font-weight:800;color:var(--accent)}
+.modal-actions{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+.modal-actions button{padding:14px;border-radius:14px;border:none;font-size:14px;font-weight:700;cursor:pointer}
+.btn-cancel{background:rgba(35,46,63,.6);color:var(--text2)}
+.btn-confirm{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0a0e14}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(20px);background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0a0e14;padding:12px 22px;border-radius:100px;font-size:13px;font-weight:700;opacity:0;transition:.3s;z-index:200;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.error{background:linear-gradient(135deg,var(--red),#ff6b6b);color:#fff}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,14,20,.9);backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;padding:8px 0 max(8px,env(safe-area-inset-bottom));z-index:60}
+.bottom-nav button{flex:1;background:transparent;border:none;color:var(--text2);padding:8px;font-size:10px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.bottom-nav button .icon{font-size:20px}
+.bottom-nav button.active{color:var(--accent)}
+.detail-header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.back-btn{width:38px;height:38px;border-radius:50%;background:rgba(35,46,63,.6);border:1px solid var(--border);color:var(--text);font-size:18px;cursor:pointer}
+.detail-title{font-size:15px;font-weight:700;flex:1}
+.detail-title small{color:var(--text2);font-size:11px;display:block;margin-top:2px}
+.detail-score-card{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:20px;padding:20px 14px;margin-bottom:14px;position:relative;overflow:hidden}
+.detail-score-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.detail-teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px}
+.detail-team{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.detail-score{font-size:36px;font-weight:900;min-width:80px;text-align:center}
+.detail-info{display:flex;justify-content:center;gap:10px;margin-top:14px;font-size:11px;color:var(--text2);flex-wrap:wrap}
+.detail-info span{background:rgba(35,46,63,.6);padding:4px 10px;border-radius:100px}
+</style>
+</head>
+<body>
+<div class="header">
+<div class="header-top">
+<div class="logo">⚽ FOOTBALL BET</div>
+<div class="balance-pill" id="balance">₽...</div>
+</div>
+<div class="tournaments-wrap"><div class="tournaments" id="tournaments"></div></div>
+</div>
+<div class="tabs" id="main-tabs">
+<button id="tab-matches" class="active" onclick="showTab('matches')">🔥 Матчи</button>
+<button id="tab-bets" onclick="showTab('bets')">🎯 Мои ставки</button>
+</div>
+<div id="content"><div class="loading">Загрузка...</div></div>
+<div class="modal-bg" id="betModal"><div class="modal">
+<div class="modal-title" id="modalTitle">Ставка</div>
+<div class="modal-sub" id="modalInfo"></div>
+<input class="amount-input" type="number" id="betAmount" value="1000000">
+<div class="quick-amounts">
+<button onclick="setAmount(1000000)">1М</button>
+<button onclick="setAmount(10000000)">10М</button>
+<button onclick="setAmount(100000000)">100М</button>
+<button onclick="setAmount('all')">MAX</button>
+</div>
+<div class="payout-preview"><span class="label">Выигрыш</span><span class="value" id="payoutPreview">₽0</span></div>
+<div class="modal-actions">
+<button class="btn-cancel" onclick="closeModal()">Отмена</button>
+<button class="btn-confirm" onclick="confirmBet()">Поставить</button>
+</div>
+</div></div>
+<div class="toast" id="toast"></div>
+<div class="bottom-nav" id="bottom-nav">
+<button class="active" data-tab="matches" onclick="showTab('matches')"><span class="icon">⚽</span>Матчи</button>
+<button data-tab="bets" onclick="showTab('bets')"><span class="icon">🎯</span>Ставки</button>
+</div>
+<script>
+const tg = window.Telegram.WebApp; tg.expand(); tg.ready();
+const initData = tg.initData;
+let currentComp = "PL", currentTab = "matches", currentMatch = null, currentPick = null, currentCoef = 0, balance = 0;
+function fmtBalance(n){return "₽"+n.toLocaleString("ru-RU").replace(/,/g,".");}
+function toast(msg,err){const t=document.getElementById("toast");t.textContent=msg;t.className="toast show"+(err?" error":"");setTimeout(()=>t.className="toast",2500);}
+function fmtTime(iso){return new Date(iso).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});}
+function fmtDate(iso){const d=new Date(iso),t=new Date(),tm=new Date(t);tm.setDate(t.getDate()+1);if(d.toDateString()===t.toDateString())return"Сегодня";if(d.toDateString()===tm.toDateString())return"Завтра";return d.toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"});}
+function isLive(m){return ["LIVE","IN_PLAY","PAUSED"].includes(m.status);}
+function isFinished(m){return m.status==="FINISHED";}
+function isScheduled(m){return ["SCHEDULED","TIMED"].includes(m.status);}
+function canBet(m){return isScheduled(m);}
+function statusLabel(m){if(isLive(m))return`<span class="status-live">🔴 LIVE${m.minute?" "+m.minute+"'":""}</span>`;if(isFinished(m))return`<span style="color:var(--text2)">✓ Завершён</span>`;return`<span class="status-sched">${fmtDate(m.utcDate)} · ${fmtTime(m.utcDate)}</span>`;}
+async function loadBalance(){try{const r=await fetch(`/api/my_balance?initData=${encodeURIComponent(initData)}`);const d=await r.json();balance=d.balance||0;document.getElementById("balance").textContent=fmtBalance(balance);}catch(e){}}
+async function loadComps(){const r=await fetch("/api/competitions");const comps=await r.json();const el=document.getElementById("tournaments");el.innerHTML="";let first=true;for(const [code,name] of Object.entries(comps)){const b=document.createElement("button");b.textContent=name;if(first){b.classList.add("active");currentComp=code;first=false;}b.onclick=()=>{document.querySelectorAll("#tournaments button").forEach(x=>x.classList.remove("active"));b.classList.add("active");currentComp=code;showTab(currentTab);};el.appendChild(b);}}
+async function loadMatches(){const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';try{const r=await fetch(`/api/matches?competition=${currentComp}`);const d=await r.json();if(d.error){el.innerHTML=`<div class="error">${d.error}</div>`;return;}if(!d.matches||!d.matches.length){el.innerHTML='<div class="empty"><div class="empty-icon">⚽</div>Нет матчей сегодня</div>';return;}el.innerHTML="";d.matches.forEach(m=>el.appendChild(renderMatch(m)));}catch(e){el.innerHTML=`<div class="error">${e.message}</div>`;}}
+function renderMatch(m){const c=document.createElement("div");c.className="match";const o=m.odds;const fh=o.favorite==="home",fa=o.favorite==="away";const hs=m.score?.home,as_=m.score?.away;const ss=(isLive(m)||isFinished(m))&&hs!==null&&as_!==null;const lk=!canBet(m);
+c.innerHTML=`<div class="match-top"><span>${m.competition||""}</span>${statusLabel(m)}</div>
+<div class="teams">
+<div class="team ${fh&&!lk?'fav':''}"><div class="team-logo-wrap"><img src="${m.home.crest}" onerror="this.style.display='none'"></div><div class="team-name">${m.home.name}</div></div>
+<div><div class="score ${ss?'':'vs'}">${ss?hs+":"+as_:"VS"}</div>${m.minute&&isLive(m)?`<div style="text-align:center;color:var(--red);font-size:10px;font-weight:700">${m.minute}'</div>`:""}</div>
+<div class="team ${fa&&!lk?'fav':''}"><div class="team-logo-wrap"><img src="${m.away.crest}" onerror="this.style.display='none'"></div><div class="team-name">${m.away.name}</div></div>
+</div>
+<div class="odds">
+<button class="${fh?'fav':''}" data-p="home" ${lk?'disabled':''}><span class="odds-label-pick">П1</span><span class="odds-coef">${o.home.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.home_chance}%</span>`}</button>
+<button data-p="draw" ${lk?'disabled':''}><span class="odds-label-pick">Х</span><span class="odds-coef">${o.draw.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.draw_chance}%</span>`}</button>
+<button class="${fa?'fav':''}" data-p="away" ${lk?'disabled':''}><span class="odds-label-pick">П2</span><span class="odds-coef">${o.away.toFixed(2)}</span>${lk?'<span class="odds-lock">🔒</span>':`<span class="odds-chance">${o.away_chance}%</span>`}</button>
+</div>`;
+c.onclick=(e)=>{if(e.target.closest(".odds button"))return;openDetail(m.id);};
+c.querySelectorAll(".odds button").forEach(b=>{if(b.disabled)return;b.onclick=(e)=>{e.stopPropagation();openBet(m,b.dataset.p,o[b.dataset.p]);};});
+return c;}
+async function openDetail(mid){document.getElementById("main-tabs").style.display="none";document.getElementById("tournaments-wrap").style.display="none";const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';try{const r=await fetch(`/api/match/${mid}`);const m=await r.json();if(m.error){el.innerHTML=`<div class="error">${m.error}</div>`;return;}renderDetail(m);}catch(e){el.innerHTML=`<div class="error">${e.message}</div>`;}}
+function closeDetail(){document.getElementById("main-tabs").style.display="flex";document.getElementById("tournaments-wrap").style.display="block";showTab(currentTab);}
+function renderDetail(m){const el=document.getElementById("content");const lv=isLive(m),fn=isFinished(m);const hs=m.score?.fullTime?.home,as_=m.score?.fullTime?.away;const ss=(lv||fn)&&hs!==null&&as_!==null;const h=m.homeTeam||{},a=m.awayTeam||{};
+el.innerHTML=`<div class="detail-header"><button class="back-btn" onclick="closeDetail()">←</button><div class="detail-title">${m.competition?.name||""}<small>${m.venue||""}</small></div></div>
+<div class="detail-score-card"><div class="detail-teams"><div class="detail-team"><div class="team-logo-wrap"><img src="${h.crest||''}" onerror="this.style.display='none'"></div><div class="team-name">${h.shortName||h.name||''}</div></div>
+<div class="detail-score">${ss?hs+":"+as_:"VS"}</div>
+<div class="detail-team"><div class="team-logo-wrap"><img src="${a.crest||''}" onerror="this.style.display='none'"></div><div class="team-name">${a.shortName||a.name||''}</div></div></div>
+<div class="detail-info"><span>${lv?'🔴 LIVE':fn?'Завершён':fmtDate(m.utcDate)+" "+fmtTime(m.utcDate)}</span>${m.minute?`<span>⏱ ${m.minute}'</span>`:""}</div></div>
+<div style="background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:16px;padding:14px;font-size:12px;color:var(--text2);line-height:1.8">Турнир: <b style="color:var(--text)">${m.competition?.name||"—"}</b><br>Стадион: <b style="color:var(--text)">${m.venue||"—"}</b><br>Дата: <b style="color:var(--text)">${fmtDate(m.utcDate)} ${fmtTime(m.utcDate)}</b></div>`;}
+function openBet(match,pick,coef){if(!canBet(match)){toast("Ставки закрыты",true);return;}currentMatch=match;currentPick=pick;currentCoef=coef;
+const lbl=pick==="home"?"П1":pick==="draw"?"Х":"П2";const tn=pick==="home"?match.home.name:pick==="draw"?"Ничья":match.away.name;
+document.getElementById("modalTitle").textContent=`${lbl} · ${tn}`;
+document.getElementById("modalInfo").innerHTML=`${match.home.name} — ${match.away.name}<br>Коэф: <b>x${coef.toFixed(2)}</b><br>Баланс: <b>${fmtBalance(balance)}</b>`;
+document.getElementById("betAmount").value="1000000";updatePay();document.getElementById("betModal").classList.add("show");}
+function updatePay(){const a=parseInt(document.getElementById("betAmount").value)||0;document.getElementById("payoutPreview").textContent=fmtBalance(Math.floor(a*currentCoef));}
+document.getElementById("betAmount").addEventListener("input",updatePay);
+function setAmount(v){document.getElementById("betAmount").value=v==="all"?balance:v;updatePay();}
+function closeModal(){document.getElementById("betModal").classList.remove("show");currentMatch=null;}
+async function confirmBet(){const a=parseInt(document.getElementById("betAmount").value);if(!a||a<100000){toast("Мин. 100.000",true);return;}if(a>balance){toast("Недостаточно",true);return;}
+try{const r=await fetch("/api/bet",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData,matchId:currentMatch.id,pick:currentPick,amount:a,coefficient:currentCoef,competition:currentComp})});
+const d=await r.json();if(d.ok){balance=d.balance;document.getElementById("balance").textContent=fmtBalance(balance);closeModal();toast(`✅ Ставка ${fmtBalance(a)}`);}else toast("❌ "+d.error,true);}catch(e){toast("Ошибка",true);}}
+async function renderMyBets(){const el=document.getElementById("content");el.innerHTML='<div class="loading">Загрузка...</div>';
+try{const r=await fetch(`/api/my_bets?initData=${encodeURIComponent(initData)}`);const d=await r.json();if(!d.bets||!d.bets.length){el.innerHTML='<div class="empty"><div class="empty-icon">🎯</div>У тебя нет ставок</div>';return;}
+el.innerHTML="";d.bets.forEach(b=>{const lbl=b.pick==="home"?`П1 (${b.home})`:b.pick==="draw"?"Х":`П2 (${b.away})`;let st="⏳ В игре";if(b.status==="won")st=`✅ +${fmtBalance(b.payout)}`;if(b.status==="lost")st="❌ Проигрыш";
+const d2=document.createElement("div");d2.className="match";d2.innerHTML=`<div style="font-weight:700;margin-bottom:8px">${b.home} — ${b.away}</div><div style="font-size:12px;color:var(--text2);margin-bottom:6px">${lbl} · ${fmtBalance(b.amount)} · x${b.coefficient.toFixed(2)}</div><div style="font-size:12px;color:var(--accent);font-weight:600">${st}</div>`;el.appendChild(d2);});}catch(e){el.innerHTML=`<div class="error">${e.message}</div>`;}}
+function showTab(t){currentTab=t;document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));document.querySelectorAll(".bottom-nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));const tb=document.getElementById("tab-"+t);if(tb)tb.classList.add("active");if(t==="matches")loadMatches();else renderMyBets();}
+loadBalance();loadComps().then(loadMatches);
+</script>
+</body>
+</html>
