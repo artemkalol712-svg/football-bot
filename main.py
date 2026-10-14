@@ -2080,7 +2080,7 @@ async def create_check_cmd(m: Message):
     if len(args) < 3: await m.answer("❌ /чек 1000000 5"); return
     try: amount = parse_amount(args[1]); ac = int(args[2])
     except: await m.answer("❌ Неверные параметры"); return
-cid = f"check_{int(datetime.now().timestamp())}"
+    cid = f"check_{int(datetime.now().timestamp())}"
     conn = get_db_connection(); c = conn.cursor()
     c.execute("INSERT INTO checks (check_id,amount,activations_left,total_activations,creator_id,created_at) VALUES (?,?,?,?,?,?)", (cid, amount, ac, ac, m.from_user.id, datetime.now().isoformat()))
     conn.commit(); conn.close()
