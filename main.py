@@ -266,23 +266,32 @@ def add_to_wardrobe(c, uid, itype, iid, iname, fid, price):
 
 class RegStates(StatesGroup):
     waiting_nick = State(); waiting_new_nick = State()
+
 class DonateImageState(StatesGroup):
     waiting_image = State()
+
 class HouseImageState(StatesGroup):
     waiting_image = State()
+
 class BankDepositState(StatesGroup):
     waiting_amount = State()
+
 class PromoCodeState(StatesGroup):
     waiting_input = State()
+
 class TeacherState(StatesGroup):
     waiting_answer = State()
+
 class RebusState(StatesGroup):
     waiting_answer = State()
+
 class PMAddState(StatesGroup):
     waiting_price = State()
+
 class TopPhotoState(StatesGroup):
     waiting_balance = State(); waiting_ref = State()
-  @dp.message(Command("start"))
+  
+@dp.message(Command("start"))
 async def cmd_start(m: Message, state: FSMContext):
     uid = m.from_user.id
     await update_username(uid, m.from_user.username)
