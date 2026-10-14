@@ -2157,7 +2157,7 @@ async def transfer_cmd(m: Message):
     await m.answer(f"✅ Перевёл {format_balance(amount)} игроку {get_nick_link(target.id, r[0])}\n💳 Баланс: {format_balance(ns)}", parse_mode=ParseMode.HTML)
     try: await bot.send_message(target.id, f"💸 Ты получил {format_balance(amount)} от {get_nick_link(uid, s[0])}\n💳 Баланс: {format_balance(nr)}", parse_mode=ParseMode.HTML)
     except: pass
-        @dp.message(F.text.lower().startswith("кости"))
+@dp.message(F.text.lower().startswith("кости"))
 async def dice_cmd(m: Message):
     if await check_stopped(m) or await check_banned(m): return
     if is_private(m):
