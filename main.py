@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from aiogram.utils.web_app import safe_parse_webapp_init_data
 import httpx
 
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = "Chealofficial_bot"
 OWNERS = {8488322314, 6595977966, 6766512894}
 CHANNEL_LINK = "https://t.me/OfficialBotcheal"
